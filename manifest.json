@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Lumina Candidate Clipper",
+  "version": "1.0.0",
+  "description": "One-click add to Lumina from LinkedIn.",
+  "permissions": [
+    "activeTab",
+    "cookies",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "https://api.lumina-app.com/*",
+    "https://app.lumina-app.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "Lumina"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.linkedin.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["https://*.linkedin.com/*"]
+    }
+  ]
+}
