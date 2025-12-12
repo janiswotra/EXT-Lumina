@@ -1,5 +1,5 @@
-export const API_BASE_URL = 'https://api.lumina-app.com/v1';
-export const APP_DOMAIN = 'https://app.lumina-app.com';
+export const API_BASE_URL = 'https://lumina-1080070879840.us-west1.run.app/api/v1';
+export const APP_DOMAIN = 'https://lumina-1080070879840.us-west1.run.app';
 
 // LinkedIn Selectors (Note: These are heuristic based as LI classes are obfuscated)
 export const SELECTORS = {
@@ -10,5 +10,5 @@ export const SELECTORS = {
   EXPERIENCE_SECTION: '#experience',
   EDUCATION_SECTION: '#education',
   // The container where we want to inject our button (The action bar below profile pic)
-  ACTION_BAR: '.ph5 .pv-top-card-v2-ctas', 
+  ACTION_BAR: '.ph5 .pv-top-card-v2-ctas',
 };

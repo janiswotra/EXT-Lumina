@@ -19,9 +19,11 @@ export interface CandidateProfile {
   location: string;
   linkedInUrl: string;
   currentCompany?: string;
+  profilePictureUrl?: string;
   experiences: Experience[];
   educations: Education[];
   skills: string[];
+  languages: string[];
 }
 
 export interface ApiResponse {
@@ -30,6 +32,7 @@ export interface ApiResponse {
   data?: any;
 }
 
-export type ExtensionMessage = 
-  | { type: 'SAVE_CANDIDATE'; payload: CandidateProfile }
-  | { type: 'CHECK_AUTH' };
+export type ExtensionMessage =
+  | { type: 'SAVE_CANDIDATE'; payload: any }
+  | { type: 'CHECK_AUTH' }
+  | { type: 'CHECK_CANDIDATE_STATUS'; payload: { sourceUrl: string } };

@@ -31,12 +31,12 @@ export default defineConfig({
       input: {
         popup: path.resolve(__dirname, 'index.html'),
         background: path.resolve(__dirname, 'background.ts'),
-        content: path.resolve(__dirname, 'content.tsx'),
+        // content is handled by vite.content.config.ts
       },
       output: {
         entryFileNames: '[name].js',
-        chunkFileNames: 'assets/[name].[hash].js',
-        assetFileNames: 'assets/[name].[hash].[ext]'
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name].[ext]'
       }
     }
   }

@@ -16,7 +16,7 @@ const getText = (root: Element | Document, selector: string): string => {
  */
 const getSectionByTitle = (titleKeyword: string): HTMLElement | null => {
   const sections = Array.from(document.querySelectorAll('section'));
-  
+
   return sections.find(section => {
     // Look for headers within the section
     const header = section.querySelector('div[id*="header"] h1, h2, span, h1');
@@ -43,12 +43,12 @@ export const parseProfile = (): CandidateProfile => {
 
   // --- 1. Basic Info ---
   // Name is typically in an H1 with specific typography classes
-  const nameSelector = 'h1.text-heading-xlarge, h1.t-24'; 
+  const nameSelector = 'h1.text-heading-xlarge, h1.t-24';
   const fullName = getText(document, nameSelector) || getText(document, '.pv-text-details__left-panel h1');
-  
+
   let firstName = '';
   let lastName = '';
-  
+
   if (fullName) {
     const parts = fullName.split(' ');
     firstName = parts[0];
@@ -61,38 +61,64 @@ export const parseProfile = (): CandidateProfile => {
   // Location
   const location = getText(document, '.text-body-small.inline.t-black--light.break-words');
 
+  // Profile Picture
+  const imgEl = document.querySelector('img.pv-top-card-profile-picture__image--show') as HTMLImageElement;
+  let profilePictureUrl = imgEl?.src;
+
+  // If no specific class, try a generic one but exclude ghost images if possible (though LinkedIn usually serves a ghost URL)
+  if (!profilePictureUrl) {
+    const genericImg = document.querySelector('.pv-top-card-profile-picture__image') as HTMLImageElement;
+    if (genericImg) profilePictureUrl = genericImg.src;
+  }
+
   // --- 2. Experience ---
   const experiences: Experience[] = [];
   const expSection = getSectionByTitle('Experience');
-  
+
   if (expSection) {
     const items = getListItems(expSection);
-    
-    items.forEach(item => {
-      // Based on provided snippet:
-      // Title: .mr1.hoverable-link-text.t-bold span[aria-hidden="true"]
-      // Company: .t-14.t-normal span[aria-hidden="true"] (first occurrence)
-      // Dates: .t-14.t-normal.t-black--light span[aria-hidden="true"]
-      
-      const titleEl = item.querySelector('.mr1.hoverable-link-text.t-bold span[aria-hidden="true"]');
-      // Sometimes the title is nested differently if it's a multi-role chain, but this is the primary anchor
-      
-      const companyEl = item.querySelector('.t-14.t-normal span[aria-hidden="true"]');
-      const datesEl = item.querySelector('.t-14.t-normal.t-black--light span[aria-hidden="true"]');
-      const locationEl = item.querySelectorAll('.t-14.t-normal.t-black--light span[aria-hidden="true"]')[1]; // Location is often the second span in the meta block
 
-      const title = titleEl?.textContent?.trim() || '';
-      // If company text includes " · Full-time", we might want to clean it, but keeping it raw is often safer
-      const company = companyEl?.textContent?.trim() || ''; 
-      const dates = datesEl?.textContent?.trim() || '';
-      
-      // If we found a title, valid entry
-      if (title) {
+    items.forEach(item => {
+      // Robust Heuristic:
+      // LinkedIn list items usually contain multiple lines of text in span[aria-hidden="true"] elements.
+      // We collect all such visible text nodes.
+      // Order is typically: Role, Company, Date • Duration, Location.
+      // Or for Education: School, Degree, Dates.
+
+      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+        .map(el => el.textContent?.trim())
+        .filter(text => text && text.length > 0);
+
+      // Remove duplicates that might occur due to nested accessibility spans (though aria-hidden="true" usually targets the visual one)
+      const uniqueLines = [...new Set(visualLines)];
+
+      if (uniqueLines.length >= 1) {
+        // Heuristic mapping
+        const title = uniqueLines[0];
+        let company = '';
+        let dates = '';
+        let location = '';
+
+        // Try to find company (usually 2nd line)
+        if (uniqueLines.length > 1) company = uniqueLines[1];
+
+        // Try to find dates (usually contains numbers or 'Present')
+        // We iterate from index 2 to find a date-like string
+        const dateIndex = uniqueLines.findIndex((txt, idx) => idx >= 2 && (/\d{4}/.test(txt) || txt.includes('Present') || txt.includes(' mo') || txt.includes(' yr')));
+        if (dateIndex !== -1) {
+          dates = uniqueLines[dateIndex];
+          // Location is often the one after dates implies context
+          if (uniqueLines[dateIndex + 1]) location = uniqueLines[dateIndex + 1];
+        } else if (uniqueLines.length > 2) {
+          // Fallback: assume 3rd line is dates/location mixed
+          dates = uniqueLines[2];
+        }
+
         experiences.push({
           title,
           company,
           dates,
-          location: locationEl?.textContent?.trim()
+          location
         });
       }
     });
@@ -101,29 +127,33 @@ export const parseProfile = (): CandidateProfile => {
   // Deduce current company
   // If the first experience says "Present", use that company
   const currentExp = experiences.find(e => e.dates?.toLowerCase().includes('present'));
-  const currentCompany = currentExp ? currentExp.company.split('·')[0].trim() : (experiences[0]?.company?.split('·')[0].trim() || '');
+  const currentCompany = currentExp ? currentExp.company.split('·')[0].trim() : (experiences.length > 0 ? experiences[0].company.split('·')[0].trim() : '');
 
   // --- 3. Education ---
   const educations: Education[] = [];
   const eduSection = getSectionByTitle('Education');
-  
+
   if (eduSection) {
     const items = getListItems(eduSection);
-    
+
     items.forEach(item => {
-      // School: .mr1.hoverable-link-text.t-bold span[aria-hidden="true"]
-      // Degree: .t-14.t-normal span[aria-hidden="true"]
-      // Dates: .t-14.t-normal.t-black--light span[aria-hidden="true"]
+      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+        .map(el => el.textContent?.trim())
+        .filter(text => text && text.length > 0);
 
-      const schoolEl = item.querySelector('.mr1.hoverable-link-text.t-bold span[aria-hidden="true"]');
-      const degreeEl = item.querySelector('.t-14.t-normal span[aria-hidden="true"]');
-      const datesEl = item.querySelector('.t-14.t-normal.t-black--light span[aria-hidden="true"]');
+      const uniqueLines = [...new Set(visualLines)];
 
-      const school = schoolEl?.textContent?.trim() || '';
-      const degree = degreeEl?.textContent?.trim() || '';
-      const dates = datesEl?.textContent?.trim() || '';
+      if (uniqueLines.length >= 1) {
+        const school = uniqueLines[0];
+        let degree = '';
+        let dates = '';
 
-      if (school) {
+        if (uniqueLines.length > 1) degree = uniqueLines[1];
+
+        // Find line with date range (e.g. 2018 - 2022)
+        const dateLine = uniqueLines.find((txt, idx) => idx >= 1 && /\d{4}/.test(txt));
+        if (dateLine) dates = dateLine;
+
         educations.push({ school, degree, dates });
       }
     });
@@ -132,17 +162,40 @@ export const parseProfile = (): CandidateProfile => {
   // --- 4. Skills ---
   const skills: string[] = [];
   const skillsSection = getSectionByTitle('Skills');
-  
+
   if (skillsSection) {
     const items = getListItems(skillsSection);
-    
+
     items.forEach(item => {
-      // Skill name: .mr1.hoverable-link-text.t-bold span[aria-hidden="true"]
-      const skillEl = item.querySelector('.mr1.hoverable-link-text.t-bold span[aria-hidden="true"]');
-      const skill = skillEl?.textContent?.trim();
-      
-      if (skill) {
-        skills.push(skill);
+      // Usually just the first line is the skill name
+      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+        .map(el => el.textContent?.trim())
+        .filter(text => text && text.length > 0);
+
+      if (visualLines.length > 0) {
+        skills.push(visualLines[0]);
+      }
+    });
+  }
+
+  // --- 5. Languages ---
+  const languages: string[] = [];
+  const langSection = getSectionByTitle('Languages');
+
+  if (langSection) {
+    const items = getListItems(langSection);
+    items.forEach(item => {
+      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+        .map(el => el.textContent?.trim())
+        .filter(text => text && text.length > 0);
+
+      if (visualLines.length > 0) {
+        // First line is usually Language name (e.g. English)
+        // Second line might be proficiency (e.g. Native or bilingual proficiency)
+        // We just capture the name for now, or maybe "Name - Proficiency"
+        const lang = visualLines[0];
+        const proficiency = visualLines[1];
+        languages.push(proficiency ? `${lang} (${proficiency})` : lang);
       }
     });
   }
@@ -154,8 +207,10 @@ export const parseProfile = (): CandidateProfile => {
     location,
     linkedInUrl: url,
     currentCompany,
+    profilePictureUrl,
     experiences,
     educations,
-    skills
+    skills,
+    languages
   };
 };

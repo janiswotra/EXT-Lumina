@@ -11,8 +11,7 @@
   ],
   "host_permissions": [
     "https://*.linkedin.com/*",
-    "https://api.lumina-app.com/*",
-    "https://app.lumina-app.com/*"
+    "https://lumina-1080070879840.us-west1.run.app/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -24,15 +23,30 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.linkedin.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://*.linkedin.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*"],
-      "matches": ["https://*.linkedin.com/*"]
+      "resources": [
+        "assets/*",
+        "assets/popup.css"
+      ],
+      "matches": [
+        "https://*.linkedin.com/*"
+      ]
     }
-  ]
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://lumina-1080070879840.us-west1.run.app/*",
+      "http://localhost:3000/*"
+    ]
+  }
 }
