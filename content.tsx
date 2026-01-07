@@ -1,7 +1,131 @@
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { LinkedInInjector } from './LinkedInInjector';
+import { parseProfileWithRetry, waitForProfileToLoad, parseProfile } from './utils/parser';
+import { storeInHarvestQueue } from './harvest';
 
+// ============================================
+// PASSIVE HARVESTING
+// Runs silently in the background when user visits profile pages
+// Does NOT interfere with the manual save flow
+// ============================================
+
+let lastHarvestedUrl = '';
+let harvestDebounceTimer: number | null = null;
+
+/**
+ * Check if current URL is a LinkedIn profile page
+ */
+const isProfilePage = (): boolean => {
+  const url = window.location.href;
+  return /linkedin\.com\/in\/[^\/]+/.test(url);
+};
+
+/**
+ * Passively harvest the current profile
+ * This runs silently and doesn't affect the manual save flow
+ */
+const passiveHarvest = async () => {
+  const currentUrl = window.location.href;
+
+  // Skip if already harvested this URL (dedup within session)
+  if (currentUrl === lastHarvestedUrl) {
+    return;
+  }
+
+  // Skip if not a profile page
+  if (!isProfilePage()) {
+    return;
+  }
+
+  console.log('[Lumina Harvest] Starting passive harvest for:', currentUrl);
+
+  try {
+    // Wait for page to load (with shorter timeout for passive mode)
+    const isReady = await waitForProfileToLoad(3000);
+    if (!isReady) {
+      console.log('[Lumina Harvest] Page not ready, will retry on next navigation');
+      return;
+    }
+
+    // Parse profile (no scrolling to avoid UX disruption)
+    const profileData = parseProfile();
+
+    // Only store if we got meaningful data
+    if (profileData.firstName && profileData.firstName !== 'Unknown') {
+      await storeInHarvestQueue(profileData);
+      lastHarvestedUrl = currentUrl;
+      console.log('[Lumina Harvest] ✅ Harvested:', profileData.firstName, profileData.lastName);
+    } else {
+      console.log('[Lumina Harvest] Skipped - no valid data parsed');
+    }
+  } catch (error) {
+    console.error('[Lumina Harvest] Error:', error);
+  }
+};
+
+/**
+ * Debounced harvest trigger - prevents multiple harvests during SPA navigation
+ */
+const triggerPassiveHarvest = () => {
+  if (harvestDebounceTimer) {
+    clearTimeout(harvestDebounceTimer);
+  }
+
+  // Wait 2 seconds after navigation settles before harvesting
+  harvestDebounceTimer = window.setTimeout(() => {
+    passiveHarvest();
+  }, 2000);
+};
+
+// Listen for URL changes (SPA navigation)
+let lastUrl = window.location.href;
+const urlObserver = new MutationObserver(() => {
+  if (window.location.href !== lastUrl) {
+    lastUrl = window.location.href;
+    console.log('[Lumina Harvest] URL changed to:', lastUrl);
+    triggerPassiveHarvest();
+  }
+});
+
+// Start URL observation
+if (document.body) {
+  urlObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+// Initial harvest attempt (in case user lands directly on a profile)
+triggerPassiveHarvest();
+
+// Handle TRIGGER_SCRAPE from background script (for "Check for Updates" feature)
+// This must be at the top level, NOT inside React, to ensure it's ready immediately
+chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
+  if (message.type === 'TRIGGER_SCRAPE') {
+    console.log('[Lumina Content] Received TRIGGER_SCRAPE command');
+
+    // Acknowledge receipt immediately
+    sendResponse({ received: true });
+
+    // Parse the profile and send it back to background
+    waitForProfileToLoad(5000).then(() => {
+      parseProfileWithRetry(3, 500).then((data) => {
+        console.log('[Lumina Content] Sending PROFILE_DATA_EXTRACTED:', data.firstName, data.lastName);
+        chrome.runtime.sendMessage({
+          type: 'PROFILE_DATA_EXTRACTED',
+          data: data
+        });
+      }).catch((err) => {
+        console.error('[Lumina Content] Parse failed:', err);
+        chrome.runtime.sendMessage({
+          type: 'PROFILE_DATA_EXTRACTED',
+          data: null,
+          error: err.message
+        });
+      });
+    });
+
+    return false; // Response already sent synchronously
+  }
+});
 
 // Track the React root to avoid duplicate mounts
 let root: Root | null = null;
@@ -73,10 +197,10 @@ const injectUI = () => {
 };
 
 // 3. Observer to handle SPA navigation and dynamic loading
+// 3. Observer to handle SPA navigation and dynamic loading
 const observer = new MutationObserver((mutations) => {
-  // Debounce simple check
-  const shouldInject = !document.getElementById(MOUNT_ID) && window.location.href.includes('/in/');
-  if (shouldInject) {
+  // Check if we are already injected
+  if (!document.getElementById(MOUNT_ID)) {
     // Ensure body exists before injecting
     if (document.body) {
       injectUI();
@@ -89,7 +213,8 @@ observer.observe(document.body, {
   subtree: true,
 });
 
-// Initial check
-if (window.location.href.includes('/in/')) {
-  setTimeout(injectUI, 1500); // Slight delay for hydration
-}
+// Initial inject - try early, with fallback
+// First attempt at 500ms for fast loading
+setTimeout(injectUI, 500);
+// Fallback at 1500ms in case DOM wasn't ready
+setTimeout(injectUI, 1500);

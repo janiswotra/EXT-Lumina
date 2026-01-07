@@ -1,17 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Lumina Candidate Clipper",
-  "version": "1.0.0",
-  "description": "One-click add to Lumina from LinkedIn.",
+  "name": "Yena Candidate Clipper",
+  "version": "1.0.9",
+  "description": "One-click add to Yena from LinkedIn.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "permissions": [
-    "activeTab",
-    "cookies",
-    "storage",
-    "scripting"
+    "storage"
   ],
   "host_permissions": [
     "https://*.linkedin.com/*",
-    "https://lumina-1080070879840.us-west1.run.app/*"
+    "https://app.yena.ai/*",
+    "https://*.yena.ai/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -19,7 +23,13 @@
   },
   "action": {
     "default_popup": "index.html",
-    "default_title": "Lumina"
+    "default_title": "Yena",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "content_scripts": [
     {
@@ -30,13 +40,26 @@
         "content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://app.yena.ai/*",
+        "https://*.yena.ai/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "contentApp.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
       "resources": [
         "assets/*",
-        "assets/popup.css"
+        "assets/popup.css",
+        "icons/*"
       ],
       "matches": [
         "https://*.linkedin.com/*"
@@ -45,8 +68,10 @@
   ],
   "externally_connectable": {
     "matches": [
-      "https://lumina-1080070879840.us-west1.run.app/*",
-      "http://localhost:3000/*"
+      "https://app.yena.ai/*",
+      "https://*.yena.ai/*",
+      "http://localhost/*",
+      "http://127.0.0.1/*"
     ]
   }
 }

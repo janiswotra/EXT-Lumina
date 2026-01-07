@@ -1,19 +1,173 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Animation for the Toast notification */
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
+/* Attio Reset Layer */
+@layer base {
+  *, ::before, ::after {
+    box-sizing: border-box;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  html {
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1.5;
+    color: #EEEFF1;
+    background-color: #09090b;
+    margin: 0;
+  }
+
+  /* Reset margins */
+  h1, h2, h3, h4, h5, h6, p {
+    margin: 0;
+  }
+
+  /* Links */
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* Buttons reset */
+  button {
+    font-family: inherit;
+    font-weight: inherit;
+    letter-spacing: inherit;
+  }
+
+  /* Focus styles */
+  :focus-visible {
+    outline: #864AFF solid 1px;
+    outline-offset: 1px;
   }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.3s ease-out forwards;
+/* Attio Component Classes */
+@layer components {
+  /* Ghost button hover */
+  .attio-ghost-hover {
+    @apply transition-colors duration-80;
+  }
+  .attio-ghost-hover:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  /* Attio Text Styles */
+  .text-attio-primary {
+    @apply text-[#EEEFF1] font-medium tracking-attio;
+  }
+  .text-attio-secondary {
+    @apply text-[#A2A4A7] font-medium tracking-attio;
+  }
+  .text-attio-tertiary {
+    @apply text-white/55 font-medium tracking-attio;
+  }
+
+  /* Attio Surface */
+  .attio-surface {
+    @apply bg-attio-bg-surface shadow-attio-inset rounded-attio-lg;
+  }
+  .attio-surface-hover:hover {
+    @apply bg-attio-bg-hover shadow-attio-inset-hover;
+  }
+
+  /* Attio Card */
+  .attio-card {
+    @apply bg-attio-bg-elevated shadow-attio-popup rounded-attio-lg;
+  }
+
+  /* Attio Input */
+  .attio-input {
+    @apply bg-transparent shadow-attio-inset rounded-attio 
+           text-attio-text-primary placeholder:text-attio-text-quaternary
+           transition-shadow duration-140
+           focus:shadow-attio-inset-focus focus:outline-none
+           hover:shadow-attio-inset-hover;
+  }
+
+  /* Attio Button Base */
+  .attio-btn-base {
+    @apply inline-flex items-center justify-center gap-1.5 
+           font-medium tracking-attio text-sm
+           transition-all duration-200
+           focus:outline-none focus-visible:outline focus-visible:outline-[#864AFF] focus-visible:outline-offset-1
+           disabled:opacity-40 disabled:cursor-not-allowed
+           active:scale-[0.98];
+  }
+
+  /* Attio Button Variants */
+  .attio-btn-primary {
+    @apply attio-btn-base bg-attio-accent text-white shadow-attio-btn-accent
+           hover:bg-attio-accent-hover;
+  }
+
+  .attio-btn-secondary {
+    @apply attio-btn-base bg-attio-bg-surface text-attio-text-primary shadow-attio-btn
+           hover:bg-attio-bg-hover;
+  }
+
+  .attio-btn-ghost {
+    @apply attio-btn-base bg-transparent text-attio-text-secondary
+           hover:bg-white/5 hover:text-attio-text-primary;
+  }
+
+  .attio-btn-danger {
+    @apply attio-btn-base bg-attio-error text-white shadow-attio-btn-error
+           hover:bg-attio-error-hover;
+  }
+
+  /* Attio Tag/Chip */
+  .attio-tag {
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md
+           text-xs font-medium tracking-attio;
+  }
+
+  /* Attio Separator */
+  .attio-separator {
+    @apply h-px w-full bg-attio-border-subtle;
+  }
+}
+
+/* Utility Animations */
+@layer utilities {
+  .animate-fade-in-up {
+    animation: fadeInUp 200ms ease-out forwards;
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Shimmer loading effect */
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(238, 239, 241, 0.03) 20%,
+      transparent 40%,
+      transparent 100%
+    ) 100% 0 / 200% 100% no-repeat rgba(238, 239, 241, 0.05);
+    animation: shimmer 1.5s ease infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+  }
 }

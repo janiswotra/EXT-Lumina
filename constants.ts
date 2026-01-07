@@ -1,5 +1,5 @@
-export const API_BASE_URL = 'https://lumina-1080070879840.us-west1.run.app/api/v1';
-export const APP_DOMAIN = 'https://lumina-1080070879840.us-west1.run.app';
+export const API_BASE_URL = 'https://app.yena.ai/api/v1';
+export const APP_DOMAIN = 'https://app.yena.ai';
 
 // LinkedIn Selectors (Note: These are heuristic based as LI classes are obfuscated)
 export const SELECTORS = {

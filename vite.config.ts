@@ -20,6 +20,10 @@ export default defineConfig({
         {
           src: 'metadata.json',
           dest: '.'
+        },
+        {
+          src: 'icons',
+          dest: '.'
         }
       ]
     })

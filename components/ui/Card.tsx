@@ -7,32 +7,48 @@ function cn(...inputs: ClassValue[]) {
 }
 
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-    variant?: 'default' | 'glass' | 'ghost';
+    variant?: 'surface' | 'elevated' | 'ghost';
+    interactive?: boolean;
     children: React.ReactNode;
 }
 
 export const Card: React.FC<CardProps> = ({
     className,
-    variant = 'default',
+    variant = 'surface',
+    interactive = false,
     children,
     ...props
 }) => {
-    const baseStyles = "rounded-2xl transition-all duration-300 relative overflow-hidden group";
+    const baseStyles = cn(
+        "rounded-xl transition-all duration-140 relative overflow-hidden"
+    );
 
     const variants = {
-        default: "bg-surface hover:bg-surface-hover border border-border-subtle hover:border-border-hover shadow-card hover:shadow-card-hover hover:-translate-y-[2px]",
-        glass: "bg-bg-elevated/80 backdrop-blur-md border border-white/5 shadow-card hover:border-white/10",
-        ghost: "bg-transparent hover:bg-white/[0.02]",
+        surface: cn(
+            "bg-[#1A1D21]",
+            "shadow-[inset_0px_0px_0px_1px_#2F3033]"
+        ),
+        elevated: cn(
+            "bg-[#1F2125]",
+            "shadow-[rgb(47,48,51)_0px_0px_0px_1px_inset,rgba(0,0,0,0.16)_0px_0px_0px_1px,rgba(0,0,0,0.48)_0px_4px_8px_-4px,rgba(0,0,0,0.64)_0px_4px_12px_-2px]"
+        ),
+        ghost: cn(
+            "bg-transparent"
+        ),
     };
+
+    const interactiveStyles = interactive ? cn(
+        "cursor-pointer",
+        "hover:bg-[#27282B]",
+        "hover:shadow-[inset_0px_0px_0px_1px_#46474A]",
+        "focus-visible:shadow-[inset_0px_0px_0px_1px_#864AFF] focus-visible:outline-none"
+    ) : "";
 
     return (
         <div
-            className={cn(baseStyles, variants[variant], className)}
+            className={cn(baseStyles, variants[variant], interactiveStyles, className)}
             {...props}
         >
-            {/* Optional Top Edge Highlight for depth */}
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-50" />
-
             {children}
         </div>
     );
