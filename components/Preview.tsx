@@ -1,6 +1,6 @@
 import React from 'react';
 import { CandidateProfile } from '../types';
-import { HarvestQueueSection } from './HarvestQueueSection';
+// import { HarvestQueueSection } from './HarvestQueueSection'; // DISABLED: Feature not synced with main app yet
 
 // Fix: Declare chrome for TypeScript
 declare const chrome: any;
@@ -285,10 +285,10 @@ export const Preview: React.FC<PreviewProps> = ({
                 </button>
             </div>
 
-            {/* Harvest Queue - Compact */}
-            <div className="px-4 pb-2">
+            {/* Harvest Queue - Compact - DISABLED: Feature not synced with main app yet */}
+            {/* <div className="px-4 pb-2">
                 <HarvestQueueSection variant="compact" />
-            </div>
+            </div> */}
 
             {/* Secondary Action */}
             <div className="px-4 pb-4">

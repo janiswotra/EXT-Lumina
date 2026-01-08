@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { Input } from './ui/Input';
 import { PickerModal, PickerOption } from './ui/PickerModal';
-import { HarvestQueueSection } from './HarvestQueueSection';
+// import { HarvestQueueSection } from './HarvestQueueSection'; // DISABLED: Feature not synced with main app yet
 import { CandidateProfile, Job, Stage, List } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -419,6 +419,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         sublabel: job.company || undefined,
     }));
 
+    // Debug: Log job options whenever they change
+    console.log('[Yena Sidebar] jobOptions for picker:', jobOptions.length, jobOptions.map(j => j.label));
+
     const stageOptions: PickerOption[] = stages.map(stage => ({
         id: stage.id,
         label: stage.name,
@@ -682,8 +685,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </CollapsibleSection>
                     )}
 
-                    {/* Harvest Queue Section */}
-                    <HarvestQueueSection variant="full" />
+                    {/* Harvest Queue Section - DISABLED: Feature not synced with main app yet */}
+                    {/* <HarvestQueueSection variant="full" /> */}
                 </div>
             </div>
 
