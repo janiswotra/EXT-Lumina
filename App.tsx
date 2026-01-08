@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from './components/Button';
-import { HarvestPanel } from './components/HarvestPanel';
+// import { HarvestPanel } from './components/HarvestPanel'; // DISABLED: Feature not synced with main app yet
 import { APP_DOMAIN } from './constants';
 import { ApiResponse } from './types';
 
@@ -54,8 +54,8 @@ const App: React.FC = () => {
 
       {/* Content */}
       <main className="flex-1 p-4 flex flex-col gap-4">
-        {/* Harvest Panel - New Feature */}
-        <HarvestPanel />
+        {/* Harvest Panel - DISABLED: Feature not synced with main app yet */}
+        {/* <HarvestPanel /> */}
 
         {/* Info Section */}
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
