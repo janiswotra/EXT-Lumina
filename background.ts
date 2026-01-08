@@ -449,7 +449,7 @@ async function fetchJobs(): Promise<ApiResponse> {
 
 /**
  * Fetches available stages from the backend.
- * Uses global stages endpoint as per backend spec.
+ * Accepts optional jobId to fetch job-specific stages.
  */
 async function fetchStages(jobId?: string): Promise<ApiResponse> {
   try {
@@ -458,9 +458,11 @@ async function fetchStages(jobId?: string): Promise<ApiResponse> {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    // Use global stages endpoint (backend doesn't have job-specific stages yet)
-    const endpoint = `${API_BASE_URL}/integrations/extension/stages`;
-    console.log('[Lumina Background] Fetching stages from:', endpoint);
+    // Include jobId parameter if provided for job-specific stages
+    const endpoint = jobId
+      ? `${API_BASE_URL}/integrations/extension/stages?jobId=${encodeURIComponent(jobId)}`
+      : `${API_BASE_URL}/integrations/extension/stages`;
+    console.log('[Lumina Background] Fetching stages from:', endpoint, jobId ? `(job: ${jobId})` : '(global)');
 
     const response = await fetch(endpoint, {
       method: 'GET',

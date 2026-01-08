@@ -323,8 +323,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     } else if (response.data.data && Array.isArray(response.data.data)) {
                         stagesData = response.data.data;
                     }
-                    console.log('[Yena Sidebar] Parsed stages for job:', stagesData.length);
+                    console.log(`[Yena Sidebar] Loaded ${stagesData.length} stages for job ${jobId}`);
                     setStages(stagesData);
+                    // Auto-select the first stage when stages are loaded for a job
+                    if (stagesData.length > 0) {
+                        setSelectedStage(stagesData[0]);
+                        console.log('[Yena Sidebar] Auto-selected first stage:', stagesData[0].name);
+                    }
                 } else {
                     console.warn('[Yena Sidebar] GET_STAGES for job failed:', response);
                     setStages([]);

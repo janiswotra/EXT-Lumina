@@ -197,7 +197,6 @@ const injectUI = () => {
 };
 
 // 3. Observer to handle SPA navigation and dynamic loading
-// 3. Observer to handle SPA navigation and dynamic loading
 const observer = new MutationObserver((mutations) => {
   // Check if we are already injected
   if (!document.getElementById(MOUNT_ID)) {

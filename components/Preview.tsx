@@ -2,6 +2,9 @@ import React from 'react';
 import { CandidateProfile } from '../types';
 import { HarvestQueueSection } from './HarvestQueueSection';
 
+// Fix: Declare chrome for TypeScript
+declare const chrome: any;
+
 interface PreviewProps {
     data: CandidateProfile;
     onAdd: () => void;
