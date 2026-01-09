@@ -205,6 +205,19 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    if (message.type === 'SET_API_KEY') {
+      const apiKey = message.payload?.apiKey;
+      if (!apiKey) {
+        sendResponse({ success: false, message: 'No API Key provided' });
+        return true;
+      }
+      chrome.storage.local.set({ lumina_api_key: apiKey }, () => {
+        console.log('[Lumina Background] API Key saved via SET_API_KEY');
+        sendResponse({ success: true });
+      });
+      return true;
+    }
+
     // ============================================
     // Harvest Queue Handlers
     // ============================================
@@ -376,7 +389,27 @@ async function checkAuthStatus(): Promise<ApiResponse> {
 }
 
 /**
+ * Normalize LinkedIn URL for consistent matching.
+ * Removes query params, hash, trailing slash, and standardizes format.
+ */
+function normalizeLinkedInUrl(inputUrl: string): string {
+  try {
+    const parsed = new URL(inputUrl);
+    // Remove query params and hash
+    let path = parsed.pathname;
+    // Remove trailing slash
+    if (path.endsWith('/')) {
+      path = path.slice(0, -1);
+    }
+    return `${parsed.origin}${path}`;
+  } catch {
+    return inputUrl;
+  }
+}
+
+/**
  * Checks if candidate exists via /status endpoint.
+ * Uses normalized URL to ensure consistent matching regardless of query params.
  */
 async function checkCandidateStatus(sourceUrl: string): Promise<ApiResponse> {
   try {
@@ -385,8 +418,12 @@ async function checkCandidateStatus(sourceUrl: string): Promise<ApiResponse> {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
+    // Normalize the URL to ensure consistent matching
+    const normalizedSourceUrl = normalizeLinkedInUrl(sourceUrl);
+    console.log('[Lumina Background] Checking candidate status for:', normalizedSourceUrl);
+
     const url = new URL(`${API_BASE_URL}/integrations/linkedin/profiles/status`);
-    url.searchParams.append('sourceUrl', sourceUrl);
+    url.searchParams.append('sourceUrl', normalizedSourceUrl);
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -402,8 +439,10 @@ async function checkCandidateStatus(sourceUrl: string): Promise<ApiResponse> {
     }
 
     const data = await response.json();
+    console.log('[Lumina Background] Candidate status result:', data.exists ? 'EXISTS' : 'NEW');
     return { success: true, data };
   } catch (error: any) {
+    console.error('[Lumina Background] Status check error:', error);
     return { success: false, message: error.message };
   }
 }
@@ -542,6 +581,7 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
         headline: frontendProfile.headline || '',
         location: frontendProfile.location || '',
         currentCompany: frontendProfile.currentCompany || '',
+        about: frontendProfile.about || '',
         email: frontendProfile.email || '',
         phone: frontendProfile.phone || '',
         profilePictureUrl: frontendProfile.profilePictureUrl || '',

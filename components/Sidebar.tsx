@@ -638,6 +638,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                 {/* Collapsible Sections */}
                 <div className="px-6 pb-6">
+                    {/* About Section */}
+                    {formData.about && (
+                        <div className="border-t border-white/5 pt-4 mb-4">
+                            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                                About
+                            </h4>
+                            <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+                                {formData.about}
+                            </p>
+                        </div>
+                    )}
+
                     {formData.experiences && formData.experiences.length > 0 && (
                         <CollapsibleSection title="Experience" count={formData.experiences.length}>
                             <div className="space-y-3 pb-4">
@@ -647,6 +659,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium text-white truncate">{exp.title}</p>
                                             <p className="text-xs text-gray-500 truncate">{exp.company} • {exp.startDate} - {exp.endDate}</p>
+                                            {exp.description && (
+                                                <p className="text-xs text-gray-400 mt-1.5 line-clamp-3 whitespace-pre-wrap">
+                                                    {exp.description}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 ))}

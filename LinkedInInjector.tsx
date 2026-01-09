@@ -56,6 +56,25 @@ const safeSendMessage = (message: any): Promise<any> => {
   });
 };
 
+/**
+ * Normalize LinkedIn URL for consistent matching.
+ * Removes query params, hash, trailing slash, and standardizes format.
+ */
+const normalizeLinkedInUrl = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    // Remove query params and hash
+    let path = parsed.pathname;
+    // Remove trailing slash
+    if (path.endsWith('/')) {
+      path = path.slice(0, -1);
+    }
+    return `${parsed.origin}${path}`;
+  } catch {
+    return url;
+  }
+};
+
 export const LinkedInInjector: React.FC = () => {
   // Start hidden (show floating button only)
   const [viewMode, setViewMode] = useState<ViewMode>('hidden');
@@ -71,6 +90,9 @@ export const LinkedInInjector: React.FC = () => {
   // Track current URL to detect changes
   const currentUrlRef = useRef(window.location.href);
 
+  // Track the URL for which we're awaiting a status check (race condition fix)
+  const pendingStatusCheckUrlRef = useRef<string | null>(null);
+
   // Global Auth State
   const [authStatus, setAuthStatus] = useState<'CHECKING' | 'AUTHENTICATED' | 'MISSING_KEY'>('CHECKING');
 
@@ -83,6 +105,7 @@ export const LinkedInInjector: React.FC = () => {
     headline: '',
     location: '',
     currentCompany: '',
+    about: '',
     email: '',
     phone: '',
     experiences: [],
@@ -97,12 +120,15 @@ export const LinkedInInjector: React.FC = () => {
     setHasScrapedCurrentUrl(false);
     setIsExisting(false);
     setIsFetchingData(false);
+    // Invalidate any pending status check by clearing the ref
+    pendingStatusCheckUrlRef.current = null;
     setProfileData({
       firstName: '',
       lastName: '',
       headline: '',
       location: '',
       currentCompany: '',
+      about: '',
       email: '',
       phone: '',
       experiences: [],
@@ -241,13 +267,33 @@ export const LinkedInInjector: React.FC = () => {
         console.log('[Lumina] Parsed profile:', data.firstName, data.lastName);
 
         // STEP 3: Check if candidate exists in Yena (only if we have valid data)
+        // Uses normalized URL and ref-based correlation to prevent race conditions
         if (data.firstName && data.lastName && data.firstName !== 'Unknown') {
+          const normalizedUrl = normalizeLinkedInUrl(window.location.href);
+          // Store the URL we're checking - this invalidates any previous pending check
+          pendingStatusCheckUrlRef.current = normalizedUrl;
+
           safeSendMessage({
             type: 'CHECK_CANDIDATE_STATUS',
-            payload: { sourceUrl: window.location.href }
+            payload: { sourceUrl: normalizedUrl }
           }).then((res: ApiResponse) => {
-            if (isMounted && res && res.success && res.data) {
+            // CRITICAL: Only update state if this response is for the CURRENT profile
+            // This prevents race conditions when rapidly navigating between profiles
+            const currentNormalizedUrl = normalizeLinkedInUrl(window.location.href);
+            const isResponseForCurrentProfile = pendingStatusCheckUrlRef.current === normalizedUrl &&
+                                                 currentNormalizedUrl === normalizedUrl;
+
+            if (isMounted && isResponseForCurrentProfile && res && res.success && res.data) {
+              console.log('[Lumina] Status check response for current profile:', normalizedUrl, 'exists:', res.data.exists);
               setIsExisting(!!res.data.exists);
+            } else if (isMounted && !isResponseForCurrentProfile) {
+              console.log('[Lumina] Ignoring stale status check response for:', normalizedUrl, '(current:', currentNormalizedUrl, ')');
+            }
+          }).catch((err) => {
+            console.error('[Lumina] Status check failed:', err);
+            // On error, default to false (show as NEW) - safer than showing stale data
+            if (isMounted && pendingStatusCheckUrlRef.current === normalizedUrl) {
+              setIsExisting(false);
             }
           });
         }

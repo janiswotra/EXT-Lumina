@@ -327,6 +327,7 @@ export const parseProfile = (): CandidateProfile => {
         let startDate = '';
         let endDate = '';
         let loc = '';
+        let description = '';
 
         const dateLineIndex = uniqueLines.findIndex(txt => /\d{4}/.test(txt) || txt.toLowerCase().includes('present'));
 
@@ -349,6 +350,25 @@ export const parseProfile = (): CandidateProfile => {
               loc = possibleLoc;
             }
           }
+
+          // Extract description: Look for longer text after metadata
+          // Description is typically >60 chars and doesn't look like dates/durations/locations
+          const metadataEndIndex = loc ? dateLineIndex + 2 : dateLineIndex + 1;
+          const descriptionLines = uniqueLines.slice(metadataEndIndex).filter(line => {
+            // Skip short lines that look like metadata
+            if (line.length < 40) return false;
+            // Skip lines that look like durations (e.g., "2 yrs 3 mos")
+            if (/^\d+\s*(yr|mo|year|month)/i.test(line)) return false;
+            // Skip lines that look like "See more" or "Show more"
+            if (/^(see|show)\s*(more|less)/i.test(line)) return false;
+            // Skip skill tags
+            if (line.startsWith('Skills:')) return false;
+            return true;
+          });
+
+          if (descriptionLines.length > 0) {
+            description = descriptionLines.join('\n\n');
+          }
         }
 
         company = company.split('·')[0].trim();
@@ -360,7 +380,7 @@ export const parseProfile = (): CandidateProfile => {
             startDate,
             endDate,
             location: loc,
-            description: ''
+            description
           });
         }
       }
