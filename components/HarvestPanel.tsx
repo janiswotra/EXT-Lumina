@@ -167,7 +167,7 @@ export const HarvestPanel: React.FC = () => {
 
             {/* Hint */}
             <p className="text-xs text-amber-600/60 dark:text-amber-400/60 mt-3 text-center italic">
-                Profiles are automatically captured when you browse LinkedIn
+                Profiles are automatically captured when you browse LinkedIn or Sales Navigator
             </p>
         </div>
     );

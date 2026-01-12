@@ -68,7 +68,7 @@ const App: React.FC = () => {
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Manual Save</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Look for the <span className="font-bold text-indigo-600">✦ Yena</span> button on LinkedIn profiles to save candidates directly.
+                Look for the <span className="font-bold text-indigo-600">✦ Yena</span> button on LinkedIn and Sales Navigator profiles to save candidates directly.
               </p>
             </div>
           </div>

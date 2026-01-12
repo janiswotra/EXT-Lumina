@@ -272,7 +272,7 @@ export const HarvestQueueSection: React.FC<HarvestQueueSectionProps> = ({
 
                     {/* Hint */}
                     <p className="text-xs text-gray-600 text-center italic">
-                        Profiles captured while browsing LinkedIn
+                        Profiles captured while browsing LinkedIn or Sales Navigator
                     </p>
                 </div>
             )}
