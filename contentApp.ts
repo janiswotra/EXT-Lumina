@@ -18,6 +18,7 @@ const injectMarker = () => {
     const marker = document.createElement('div');
     marker.id = 'lumina-extension-installed';
     marker.setAttribute('data-version', '1.1.0');
+    marker.setAttribute('data-extension-id', chrome.runtime.id || '');
     marker.style.display = 'none';
     document.body.appendChild(marker);
 
@@ -100,6 +101,36 @@ window.addEventListener('message', async (event) => {
             window.postMessage({
                 source: 'LUMINA_EXTENSION_ACK',
                 profileId: payload?.profileId,
+                success: false,
+                error: err.message
+            }, '*');
+        }
+        return;
+    }
+
+    if (type === 'SET_API_KEY') {
+        try {
+            console.log('[Lumina contentApp] Received API Key from web app');
+            // Relay to background script to save the key
+            chrome.runtime.sendMessage({
+                type: 'SET_API_KEY',
+                payload
+            }, (response) => {
+                console.log('[Lumina contentApp] Background response for SET_API_KEY:', response);
+
+                // Send acknowledgment back to web app
+                window.postMessage({
+                    source: 'LUMINA_EXTENSION_ACK',
+                    type: 'SET_API_KEY_RESULT',
+                    success: response?.success ?? true,
+                    error: response?.error
+                }, '*');
+            });
+        } catch (err: any) {
+            console.error('[Lumina contentApp] Error sending API Key to background:', err);
+            window.postMessage({
+                source: 'LUMINA_EXTENSION_ACK',
+                type: 'SET_API_KEY_RESULT',
                 success: false,
                 error: err.message
             }, '*');

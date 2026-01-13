@@ -586,30 +586,71 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
   // Name: Try multiple strategies
   let fullName = '';
 
-  // Strategy 1: span with _name_ class (most reliable)
-  const nameSpan = document.querySelector('span[class*="_name_"]');
-  if (nameSpan) {
-    fullName = nameSpan.textContent?.trim() || '';
+  // Helper function to check if text looks like a company name rather than a person
+  const looksLikeCompanyName = (text: string): boolean => {
+    if (!text) return false;
+    // Common company name patterns
+    const companyPatterns = [
+      /\s&\s/,           // Contains " & " (Rothschild & Co)
+      /\bCo\.?$/i,        // Ends with "Co" or "Co."
+      /\bLtd\.?$/i,       // Ends with "Ltd" or "Ltd."
+      /\bInc\.?$/i,       // Ends with "Inc" or "Inc."
+      /\bLLC$/i,          // Ends with "LLC"
+      /\bGmbH$/i,         // German company
+      /\bAG$/i,           // German/Swiss company
+      /\bPlc\.?$/i,       // British company
+      /\bCorp\.?$/i,      // Corporation
+      /\bGroup$/i,        // Group
+      /\bPartners$/i,     // Partners (e.g., Fortlane Partners)
+      /\bCapital$/i,      // Capital (e.g., Barclays Capital)
+      /\bBank$/i,         // Bank
+    ];
+    return companyPatterns.some(pattern => pattern.test(text));
+  };
+
+  // Strategy 1: Look for profile topcard name element (specific to lead pages)
+  const profileNameEl = document.querySelector('[data-x--lead-name], [class*="profile-topcard"] [class*="_name_"]');
+  if (profileNameEl) {
+    const text = profileNameEl.textContent?.trim();
+    if (text && !looksLikeCompanyName(text)) {
+      fullName = text;
+    }
   }
 
-  // Strategy 2: element with _headingText_ class (not necessarily h1)
+  // Strategy 2: span with _name_ class but NOT inside company/account sections
   if (!fullName) {
-    const headingTextEl = document.querySelector('[class*="_headingText_"]');
-    if (headingTextEl) {
-      const text = headingTextEl.textContent?.trim();
-      if (text && !text.includes('Lead Page') && !text.includes('information for') && text.length < 60) {
+    const nameSpans = document.querySelectorAll('span[class*="_name_"]');
+    for (const span of nameSpans) {
+      const text = span.textContent?.trim();
+      // Skip if it's inside an account/company section
+      const isInsideCompanySection = span.closest('[class*="account"], [class*="company"], [class*="_savedAccount_"]');
+      if (text && !isInsideCompanySection && !looksLikeCompanyName(text) && text.length < 60) {
         fullName = text;
+        break;
       }
     }
   }
 
-  // Strategy 3: h1 inside header that looks like a name (fallback)
+  // Strategy 3: element with _headingText_ class (not necessarily h1)
+  if (!fullName) {
+    const headingTextEls = document.querySelectorAll('[class*="_headingText_"]');
+    for (const el of headingTextEls) {
+      const text = el.textContent?.trim();
+      if (text && !text.includes('Lead Page') && !text.includes('information for') &&
+        !looksLikeCompanyName(text) && text.length < 60) {
+        fullName = text;
+        break;
+      }
+    }
+  }
+
+  // Strategy 4: h1 inside header that looks like a name (fallback)
   if (!fullName && headerEl) {
     const h1Els = headerEl.querySelectorAll('h1');
     for (const h of h1Els) {
       const text = h.textContent?.trim();
       if (text && !text.includes('Lead Page') && !text.includes('information for') &&
-          !text.includes('insights') && text.length < 60) {
+        !text.includes('insights') && !looksLikeCompanyName(text) && text.length < 60) {
         fullName = text;
         break;
       }
@@ -623,6 +664,8 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     firstName = parts[0];
     lastName = parts.slice(1).join(' ');
   }
+
+  console.log('[Lumina Parser] Sales Navigator name detected:', fullName, '| firstName:', firstName, '| lastName:', lastName);
 
   // Headline: Find the job description text (usually contains @ or | for job titles)
   let headline = '';
@@ -643,9 +686,9 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
       const text = p.textContent?.trim();
       // Look for job-description-like text with @ or | patterns
       if (text && text.length > 20 && text.length < 300 &&
-          (text.includes('@') || text.includes('|') || text.includes('Engineer') || text.includes('Developer')) &&
-          !text.includes('Message') && !text.includes('connection') &&
-          !text.includes('warm introduction') && !text.includes('Show more')) {
+        (text.includes('@') || text.includes('|') || text.includes('Engineer') || text.includes('Developer')) &&
+        !text.includes('Message') && !text.includes('connection') &&
+        !text.includes('warm introduction') && !text.includes('Show more')) {
         headline = text.replace(/\s+/g, ' ').trim();
         break;
       }
@@ -658,8 +701,8 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     for (const p of paragraphs) {
       const text = p.textContent?.trim();
       if (text && text.length > 30 && text.length < 300 &&
-          !text.includes('Message') && !text.includes('connection') &&
-          !text.includes('introduction') && !text.includes('Show more')) {
+        !text.includes('Message') && !text.includes('connection') &&
+        !text.includes('introduction') && !text.includes('Show more')) {
         headline = text.replace(/\s+/g, ' ').trim();
         break;
       }
@@ -677,9 +720,9 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
       const text = d.textContent?.trim();
       // Location pattern: contains comma, reasonable length, looks like location
       if (text && text.includes(',') && text.length < 60 && text.length > 5 &&
-          !text.includes('connection') && !text.includes('Viewed') &&
-          !text.includes('@') && !text.includes('http') && !text.includes('|') &&
-          !text.includes('Engineer') && !text.includes('Developer')) {
+        !text.includes('connection') && !text.includes('Viewed') &&
+        !text.includes('@') && !text.includes('http') && !text.includes('|') &&
+        !text.includes('Engineer') && !text.includes('Developer')) {
         location = text;
         break;
       }
@@ -693,10 +736,10 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
       if (el.children.length <= 2) {
         const text = el.textContent?.trim();
         if (text && text.length < 60 && text.length > 5 &&
-            (text.includes('India') || text.includes('United States') || text.includes('UK') ||
-             text.includes('Germany') || text.includes('Canada') || text.includes('Australia') ||
-             text.includes('Area') || text.includes('Metro')) &&
-            !text.includes('@') && !text.includes('|')) {
+          (text.includes('India') || text.includes('United States') || text.includes('UK') ||
+            text.includes('Germany') || text.includes('Canada') || text.includes('Australia') ||
+            text.includes('Area') || text.includes('Metro')) &&
+          !text.includes('@') && !text.includes('|')) {
           location = text;
           break;
         }
@@ -710,9 +753,9 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     for (const d of locationDivs) {
       const text = d.textContent?.trim();
       if (text && text.includes(',') && text.length < 60 && text.length > 5 &&
-          !text.includes('connection') && !text.includes('Viewed') &&
-          !text.includes('@') && !text.includes('http') && !text.includes('|') &&
-          !text.includes('Engineer') && !text.includes('Developer')) {
+        !text.includes('connection') && !text.includes('Viewed') &&
+        !text.includes('@') && !text.includes('http') && !text.includes('|') &&
+        !text.includes('Engineer') && !text.includes('Developer')) {
         location = text;
         break;
       }
@@ -729,7 +772,7 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     const src = (img as HTMLImageElement).src || '';
     // profile-displayphoto is the actual profile picture, not displaybackgroundimage
     if (src.includes('profile-displayphoto') && !src.includes('ghost') &&
-        (img as HTMLImageElement).width >= 50) {
+      (img as HTMLImageElement).width >= 50) {
       profilePictureUrl = src;
       break;
     }
@@ -745,7 +788,7 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     for (const selector of imgSelectors) {
       const img = document.querySelector(selector) as HTMLImageElement;
       if (img?.src && img.src.startsWith('http') && !img.src.includes('ghost') &&
-          !img.src.includes('displaybackgroundimage')) {
+        !img.src.includes('displaybackgroundimage')) {
         profilePictureUrl = img.src;
         break;
       }
@@ -758,7 +801,7 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     if (metaImage) {
       const content = metaImage.getAttribute('content');
       if (content && content.startsWith('http') && !content.includes('ghost') &&
-          !content.includes('unavailable') && content.includes('profile-displayphoto')) {
+        !content.includes('unavailable') && content.includes('profile-displayphoto')) {
         profilePictureUrl = content;
       }
     }
@@ -837,7 +880,7 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
         const text = el.textContent?.trim();
         // Look for substantial text that's not a heading or button
         if (text && text.length > 30 && text.length < 2000 &&
-            text !== 'About' && !text.includes('Show more') && !text.includes('Show less')) {
+          text !== 'About' && !text.includes('Show more') && !text.includes('Show less')) {
           about = text.replace(/\s+/g, ' ').replace(/…\s*Show more/g, '').trim();
           break;
         }
@@ -911,7 +954,7 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
 
         // Description: longer text that's not metadata
         if (text.length > 50 && !text.includes('Show more') && !text.includes('Summarized by AI') &&
-            !text.includes('Sources:') && !text.includes('Was this helpful')) {
+          !text.includes('Sources:') && !text.includes('Was this helpful')) {
           description = text.replace(/…\s*Show more/g, '').trim();
         }
       }
@@ -938,48 +981,159 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     h.textContent?.trim().toLowerCase() === 'education'
   );
 
+  // Helper to identify if text looks like a school/university name
+  const looksLikeSchoolName = (text: string): boolean => {
+    if (!text || text.length < 3) return false;
+    const schoolPatterns = [
+      /university/i,
+      /college/i,
+      /school/i,
+      /institute/i,
+      /academy/i,
+      /polytechnic/i,
+      /hochschule/i,     // German
+      /universit[äaà]/i, // German/French/Italian
+      /^MIT$/i,
+      /^LSE$/i,
+      /^UCLA$/i,
+      /^NYU$/i,
+      /^ETH/i,
+      /^INSEAD$/i,
+      /^HEC$/i,
+      /^LBS$/i,          // London Business School
+      /^WBS$/i,          // Warwick Business School
+    ];
+    return schoolPatterns.some(pattern => pattern.test(text));
+  };
+
+  // Helper to identify if text looks like a degree
+  const looksLikeDegree = (text: string): boolean => {
+    if (!text || text.length < 2) return false;
+    const degreePatterns = [
+      /^BA\b/i, /^BS\b/i, /^BSc\b/i, /^BBA\b/i, /^BCom\b/i,
+      /^MA\b/i, /^MS\b/i, /^MSc\b/i, /^MBA\b/i, /^MPhil\b/i,
+      /^PhD\b/i, /^Dr\.?\b/i, /^JD\b/i, /^LLB\b/i, /^LLM\b/i,
+      /^Bachelor/i, /^Master/i, /^Doctor/i,
+      /\(hons?\)/i,       // "(hons)" or "(hon)"
+      /honours?/i,        // "honours" or "honor"
+      /degree/i,
+      /diploma/i,
+      /certificate/i,
+    ];
+    return degreePatterns.some(pattern => pattern.test(text));
+  };
+
+  // Helper to identify if text looks like a field of study
+  const looksLikeFieldOfStudy = (text: string): boolean => {
+    if (!text || text.length < 3) return false;
+    const fieldPatterns = [
+      /economics/i, /business/i, /finance/i, /accounting/i,
+      /engineering/i, /computer science/i, /mathematics/i, /physics/i,
+      /chemistry/i, /biology/i, /medicine/i, /law/i,
+      /psychology/i, /sociology/i, /philosophy/i, /history/i,
+      /political science/i, /international relations/i,
+      /marketing/i, /management/i, /communications/i,
+    ];
+    return fieldPatterns.some(pattern => pattern.test(text));
+  };
+
   if (eduHeading) {
     // Use section or parent element as container
-    const eduSection = eduHeading.closest('section') || eduHeading.parentElement?.parentElement;
+    const eduSection = eduHeading.closest('section') || eduHeading.closest('[role="region"]') || eduHeading.parentElement?.parentElement;
     const eduList = eduSection?.querySelector('ul, ol');
-    const eduItems = eduList?.querySelectorAll('li') || eduSection?.querySelectorAll('li');
+    const eduItems = eduList?.querySelectorAll(':scope > li') || eduSection?.querySelectorAll('li');
 
     eduItems?.forEach(item => {
-      // School name: usually in a heading or link
-      const schoolLink = item.querySelector('a[href*="school"], a[href*="linkedin.com/school"]');
-      const schoolHeading = item.querySelector('h2, h3');
-      const school = schoolLink?.textContent?.trim() || schoolHeading?.textContent?.trim() || '';
+      // Collect all text elements
+      const allTexts: string[] = [];
 
-      // Degree and field from spans
+      // Priority 1: Links to schools
+      const schoolLink = item.querySelector('a[href*="school"], a[href*="linkedin.com/school"], a[href*="/company/"]');
+      if (schoolLink?.textContent?.trim()) {
+        allTexts.push(schoolLink.textContent.trim());
+      }
+
+      // Priority 2: H2/H3 headings
+      const headings = item.querySelectorAll('h2, h3');
+      headings.forEach(h => {
+        const t = h.textContent?.trim();
+        if (t && !allTexts.includes(t)) allTexts.push(t);
+      });
+
+      // Priority 3: All spans
+      const spans = item.querySelectorAll('span');
+      spans.forEach(s => {
+        const t = s.textContent?.trim();
+        if (t && t.length > 1 && t.length < 100 && !allTexts.includes(t)) {
+          allTexts.push(t);
+        }
+      });
+
+      // Deduplicate and filter
+      const uniqueTexts = [...new Set(allTexts)].filter(t =>
+        t.length > 1 && !t.includes('Show more') && !t.includes('Show less')
+      );
+
+      // Identify school, degree, field, date
+      let school = '';
       let degree = '';
       let field = '';
       let endDate = '';
 
-      const spans = item.querySelectorAll('span');
-      const texts: string[] = [];
-      spans.forEach(s => {
-        const t = s.textContent?.trim();
-        if (t && t.length > 1 && t.length < 100) texts.push(t);
-      });
+      for (const text of uniqueTexts) {
+        // Check for year
+        const yearMatch = text.match(/(\d{4})/);
+        if (yearMatch && !endDate) {
+          // Extract just the end year from date ranges like "2015 - 2019"
+          const rangeMatch = text.match(/(\d{4})\s*[-–]\s*(\d{4})/);
+          if (rangeMatch) {
+            endDate = rangeMatch[2]; // Get the end year
+          } else {
+            endDate = yearMatch[1];
+          }
+          continue;
+        }
 
-      // Look for degree/field (usually after school name)
-      for (const text of texts) {
-        if (text !== school && !text.match(/^\d{4}$/) && text.length > 3) {
+        // Check for school (university, college, etc.)
+        if (!school && looksLikeSchoolName(text)) {
+          school = text;
+          continue;
+        }
+
+        // Check for degree (BA, MSc, MBA, etc.)
+        if (looksLikeDegree(text)) {
           if (!degree) {
             degree = text;
-          } else if (!field && text !== degree) {
-            field = text;
+          } else if (text !== degree) {
+            // Combine if we have multiple degree-like entries (e.g., "BA" + "(hons)")
+            degree = degree + ' ' + text;
           }
+          continue;
         }
-        // Year pattern
-        const yearMatch = text.match(/(\d{4})/);
-        if (yearMatch) {
-          endDate = yearMatch[1];
+
+        // Check for field of study
+        if (!field && looksLikeFieldOfStudy(text)) {
+          field = text;
+          continue;
         }
       }
 
-      if (school) {
-        educations.push({ school, degree, field, endDate });
+      // Fallback: if no school identified, use the first substantial non-degree text
+      if (!school) {
+        for (const text of uniqueTexts) {
+          if (!looksLikeDegree(text) && !looksLikeFieldOfStudy(text) &&
+            !text.match(/^\d{4}/) && !text.match(/^\d{4}\s*[-–]/) &&
+            text.length > 5 && text !== degree && text !== field) {
+            school = text;
+            break;
+          }
+        }
+      }
+
+      // If we found a school OR we have meaningful education data, add it
+      if (school || (degree && degree.length > 2)) {
+        educations.push({ school: school || '', degree, field, endDate });
+        console.log('[Lumina Parser] Education parsed:', { school, degree, field, endDate });
       }
     });
   }
@@ -1003,7 +1157,7 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
       if (firstChild) {
         const text = firstChild.textContent?.trim();
         if (text && text.length > 1 && text.length < 60 &&
-            !text.includes('endorsement') && !/^\d+$/.test(text)) {
+          !text.includes('endorsement') && !/^\d+$/.test(text)) {
           skillName = text;
         }
       }
@@ -1011,11 +1165,11 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
       // Strategy 2: Look for skill name in span elements
       if (!skillName) {
         const nameEl = item.querySelector('span[class*="_name_"], span[class*="_title_"]') ||
-                       item.querySelector('a span');
+          item.querySelector('a span');
         if (nameEl) {
           const text = nameEl.textContent?.trim();
           if (text && text.length > 1 && text.length < 60 &&
-              !text.includes('endorsement') && !/^\d+$/.test(text)) {
+            !text.includes('endorsement') && !/^\d+$/.test(text)) {
             skillName = text;
           }
         }
@@ -1027,8 +1181,8 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
         for (const span of allSpans) {
           const text = span.textContent?.trim();
           if (text && text.length > 1 && text.length < 60 &&
-              !text.includes('endorsement') && !/^\d+$/.test(text) &&
-              !text.includes('Show')) {
+            !text.includes('endorsement') && !/^\d+$/.test(text) &&
+            !text.includes('Show')) {
             skillName = text;
             break;
           }
@@ -1055,16 +1209,16 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     langItems?.forEach(item => {
       // Look for language name specifically
       const nameEl = item.querySelector('span[class*="_name_"], span[class*="_title_"]') ||
-                     item.querySelector('span:first-child');
+        item.querySelector('span:first-child');
 
       if (nameEl) {
         const text = nameEl.textContent?.trim();
         // Language name (not proficiency level)
         if (text && text.length > 1 && text.length < 40 &&
-            !text.toLowerCase().includes('proficiency') &&
-            !text.toLowerCase().includes('fluent') &&
-            !text.toLowerCase().includes('native') &&
-            !text.toLowerCase().includes('elementary')) {
+          !text.toLowerCase().includes('proficiency') &&
+          !text.toLowerCase().includes('fluent') &&
+          !text.toLowerCase().includes('native') &&
+          !text.toLowerCase().includes('elementary')) {
           languages.push(text);
         }
       } else {
@@ -1073,10 +1227,10 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
         for (const span of spans) {
           const text = span.textContent?.trim();
           if (text && text.length > 1 && text.length < 40 &&
-              !text.toLowerCase().includes('proficiency') &&
-              !text.toLowerCase().includes('fluent') &&
-              !text.toLowerCase().includes('native') &&
-              !text.toLowerCase().includes('elementary')) {
+            !text.toLowerCase().includes('proficiency') &&
+            !text.toLowerCase().includes('fluent') &&
+            !text.toLowerCase().includes('native') &&
+            !text.toLowerCase().includes('elementary')) {
             languages.push(text);
             break;
           }

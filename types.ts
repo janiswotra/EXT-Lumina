@@ -77,7 +77,8 @@ export type ExtensionMessage =
   | { type: 'GET_HARVEST_STATUS' }
   | { type: 'GET_HARVEST_QUEUE' }
   | { type: 'SYNC_HARVEST' }
-  | { type: 'CLEAR_SYNCED' };
+  | { type: 'CLEAR_SYNCED' }
+  | { type: 'SET_API_KEY'; payload: { apiKey: string } };
 
 // Harvest Sync Response
 export interface HarvestSyncResponse {

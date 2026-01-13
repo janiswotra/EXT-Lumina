@@ -68,6 +68,9 @@ export const PickerModal: React.FC<PickerModalProps> = ({
         opt.sublabel?.toLowerCase().includes(search.toLowerCase())
     );
 
+    // Debug: Log options and filtered results
+    console.log('[PickerModal] Options received:', options.length, 'Search:', search, 'Filtered:', filteredOptions.length);
+
     return (
         <div className="absolute inset-0 z-50 flex flex-col pointer-events-auto">
             {/* Backdrop */}
