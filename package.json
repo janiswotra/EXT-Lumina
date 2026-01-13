@@ -1,6 +1,6 @@
 {
   "name": "lumina-candidate-clipper",
-  "version": "1.0.14",
+  "version": "1.0.20",
   "type": "module",
   "scripts": {
     "dev": "vite",
