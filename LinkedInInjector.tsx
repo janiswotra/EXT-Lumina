@@ -34,7 +34,6 @@ const isExtensionContextValid = (): boolean => {
 const safeSendMessage = (message: any): Promise<any> => {
   return new Promise((resolve) => {
     if (!isExtensionContextValid()) {
-      console.log('[Lumina] Extension context invalid, skipping message');
       resolve(null);
       return;
     }
@@ -43,14 +42,12 @@ const safeSendMessage = (message: any): Promise<any> => {
       chrome.runtime.sendMessage(message, (response: any) => {
         if (chrome.runtime.lastError) {
           // Handle the error silently - context may have been invalidated
-          console.log('[Lumina] Message error (expected after reload):', chrome.runtime.lastError.message);
           resolve(null);
           return;
         }
         resolve(response);
       });
     } catch (e) {
-      console.log('[Lumina] Failed to send message:', e);
       resolve(null);
     }
   });
@@ -108,10 +105,14 @@ export const LinkedInInjector: React.FC = () => {
     about: '',
     email: '',
     phone: '',
+    connectionDegree: '',
     experiences: [],
     educations: [],
     skills: [],
     languages: [],
+    certifications: [],
+    courses: [],
+    organizations: [],
     linkedinUrl: window.location.href,
   });
 
@@ -131,10 +132,14 @@ export const LinkedInInjector: React.FC = () => {
       about: '',
       email: '',
       phone: '',
+      connectionDegree: '',
       experiences: [],
       educations: [],
       skills: [],
       languages: [],
+      certifications: [],
+      courses: [],
+      organizations: [],
       linkedinUrl: window.location.href,
     });
   }, []);
@@ -147,14 +152,12 @@ export const LinkedInInjector: React.FC = () => {
   const checkAuth = async () => {
     // Check if extension context is still valid
     if (!isExtensionContextValid()) {
-      console.log('[Lumina] Extension context invalid, skipping auth check');
       setAuthStatus('MISSING_KEY');
       return;
     }
 
     // Set a timeout to fallback to MISSING_KEY if no response
     const timeout = setTimeout(() => {
-      console.log('[Lumina] Auth check timed out');
       setAuthStatus('MISSING_KEY');
     }, 5000);
 
@@ -165,12 +168,10 @@ export const LinkedInInjector: React.FC = () => {
       if (response && response.success) {
         setAuthStatus('AUTHENTICATED');
       } else {
-        console.log('[Lumina] Auth check failed:', response);
         setAuthStatus('MISSING_KEY');
       }
     } catch (e) {
       clearTimeout(timeout);
-      console.log('[Lumina] Auth check error:', e);
       setAuthStatus('MISSING_KEY');
     }
   };
@@ -179,17 +180,14 @@ export const LinkedInInjector: React.FC = () => {
   useEffect(() => {
     const messageListener = (message: any, sender: any, sendResponse: any) => {
       if (message.type === 'TRIGGER_SCRAPE') {
-        console.log('[Lumina] Received TRIGGER_SCRAPE command');
 
         // Background scrape - use scrolling for full data capture
         // Since this opens in a separate window, scrolling is acceptable
         waitForProfileToLoad(5000).then((isReady) => {
           if (!isReady) {
-            console.log('[Lumina] Profile wait timed out, attempting fallback parse...');
           }
           // Enable scrolling (true) for background scrapes to capture all experience items
           parseProfileWithRetry(3, 250, true).then((data: any) => {
-            console.log('[Lumina] Sending extracted data back to background');
             chrome.runtime.sendMessage({
               type: 'PROFILE_DATA_EXTRACTED',
               data: data
@@ -236,17 +234,14 @@ export const LinkedInInjector: React.FC = () => {
     const loadProfileData = async () => {
       // Skip if extension context is invalid (extension was reloaded)
       if (!isExtensionContextValid()) {
-        console.log('[Lumina] Extension context invalid, stopping profile load');
         return;
       }
 
       // Skip if not a profile page
       if (!isValidProfilePage()) {
-        console.log('[Lumina] Not a profile page, skipping...');
         return;
       }
 
-      console.log('[Lumina] Loading profile data...');
       setIsFetchingData(true);
 
       try {
@@ -256,7 +251,6 @@ export const LinkedInInjector: React.FC = () => {
 
         // Fallback parsing: even if timeout, try to parse what's available
         if (!isReady) {
-          console.log('[Lumina] Profile DOM not ready after timeout, attempting fallback parse...');
           // Don't return early - try parsing anyway with whatever is available
         }
 
@@ -264,7 +258,6 @@ export const LinkedInInjector: React.FC = () => {
         const data = await parseProfileWithRetry(3, 250, false);
         if (!isMounted) return;
 
-        console.log('[Lumina] Parsed profile:', data.firstName, data.lastName);
 
         // STEP 3: Check if candidate exists in Yena (only if we have valid data)
         // Uses normalized URL and ref-based correlation to prevent race conditions
@@ -284,10 +277,8 @@ export const LinkedInInjector: React.FC = () => {
                                                  currentNormalizedUrl === normalizedUrl;
 
             if (isMounted && isResponseForCurrentProfile && res && res.success && res.data) {
-              console.log('[Lumina] Status check response for current profile:', normalizedUrl, 'exists:', res.data.exists);
               setIsExisting(!!res.data.exists);
             } else if (isMounted && !isResponseForCurrentProfile) {
-              console.log('[Lumina] Ignoring stale status check response for:', normalizedUrl, '(current:', currentNormalizedUrl, ')');
             }
           }).catch((err) => {
             console.error('[Lumina] Status check failed:', err);
@@ -301,14 +292,12 @@ export const LinkedInInjector: React.FC = () => {
         // STEP 4: Auto-scrape Contact Info - DISABLED per user request to prevent UI flashing/UX issues
         /*
         if (is1stDegreeConnection() && !hasScrapedCurrentUrl && !data.email && !data.phone) {
-          console.log('[Lumina] 1st degree connection - initiating contact scrape...');
           setHasScrapedCurrentUrl(true);
 
           // Run in background, update when done
           scrapeContactInfo().then(contactInfo => {
             if (!isMounted) return;
             if (contactInfo.email || contactInfo.phone) {
-              console.log('[Lumina] Contact info scraped:', contactInfo);
               setProfileData((prev: any) => ({
                 ...prev,
                 ...(contactInfo.email && { email: contactInfo.email }),
@@ -352,7 +341,6 @@ export const LinkedInInjector: React.FC = () => {
 
       // Stop polling if extension context is invalid
       if (!isExtensionContextValid()) {
-        console.log('[Lumina] Extension context invalid, stopping polling');
         if (pollTimer) {
           clearInterval(pollTimer);
           pollTimer = null;
@@ -362,7 +350,6 @@ export const LinkedInInjector: React.FC = () => {
 
       // Check URL change ONLY
       if (window.location.href !== currentUrlRef.current) {
-        console.log('[Lumina] URL changed from', currentUrlRef.current, 'to', window.location.href);
         currentUrlRef.current = window.location.href;
         hasInitiallyLoaded = false;
 
@@ -440,7 +427,6 @@ export const LinkedInInjector: React.FC = () => {
   };
 
   const handleSave = async (jobId?: string, stageId?: string, listId?: string) => {
-    console.log('[Lumina] handleSave called', { jobId, stageId, listId });
     setLoading(true);
     setToast(null);
 
@@ -457,16 +443,13 @@ export const LinkedInInjector: React.FC = () => {
         ...(listId && { listId })
       };
 
-      console.log('[Lumina] Sending SAVE_CANDIDATE message', payload);
 
       const response = await safeSendMessage({ type: 'SAVE_CANDIDATE', payload });
-      console.log('[Lumina] Background response:', response);
 
       if (!response) {
         throw new Error('Failed to communicate with extension. Please refresh the page.');
       }
 
-      console.log('[Lumina] Processed response:', response);
 
       if (response && response.success) {
         setToast({ msg: 'Candidate saved to Yena!', type: 'success' });

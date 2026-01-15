@@ -13,7 +13,7 @@ interface PreviewProps {
     isFetching?: boolean;
 }
 
-// Attio-style info row component
+// Attio-style info row component - improved for readability
 const InfoRow: React.FC<{
     icon: React.ReactNode;
     label: string;
@@ -21,25 +21,25 @@ const InfoRow: React.FC<{
     isLink?: boolean;
     href?: string;
 }> = ({ icon, label, value, isLink, href }) => (
-    <div className="flex items-center gap-3 py-2.5 group">
-        <div className="w-5 h-5 flex items-center justify-center text-[#A2A4A7] shrink-0">
+    <div className="flex items-start gap-3 py-2.5 group">
+        <div className="w-5 h-5 flex items-center justify-center text-[#6B7280] shrink-0 mt-0.5">
             {icon}
         </div>
-        <span className="text-sm font-medium tracking-[-0.02em] text-[#A2A4A7] w-[90px] shrink-0">
-            {label}
-        </span>
         <div className="flex-1 min-w-0">
+            <span className="text-xs font-medium tracking-[-0.01em] text-[#6B7280] uppercase block mb-1">
+                {label}
+            </span>
             {isLink ? (
                 <a
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] hover:underline underline-offset-2 truncate block"
+                    className="text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] hover:text-[#864AFF] hover:underline underline-offset-2 block break-words"
                 >
                     {value}
                 </a>
             ) : typeof value === 'string' ? (
-                <span className="text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] truncate block">
+                <span className="text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] block break-words leading-relaxed">
                     {value}
                 </span>
             ) : (
@@ -84,7 +84,7 @@ export const Preview: React.FC<PreviewProps> = ({
     const showSkeleton = isFetching || (!data.firstName && !data.lastName);
 
     return (
-        <div className="fixed right-5 top-16 w-[380px] bg-[#1A1D21] rounded-xl shadow-[rgb(47,48,51)_0px_0px_0px_1px_inset,rgba(0,0,0,0.16)_0px_0px_0px_1px,rgba(0,0,0,0.48)_0px_4px_8px_-4px,rgba(0,0,0,0.64)_0px_4px_12px_-2px] overflow-hidden font-sans z-[2147483647] pointer-events-auto animate-fade-in-up">
+        <div className="fixed right-5 top-16 w-[420px] bg-[#1A1D21] rounded-xl shadow-[rgb(47,48,51)_0px_0px_0px_1px_inset,rgba(0,0,0,0.16)_0px_0px_0px_1px,rgba(0,0,0,0.48)_0px_4px_8px_-4px,rgba(0,0,0,0.64)_0px_4px_12px_-2px] overflow-hidden font-sans z-[2147483647] pointer-events-auto animate-fade-in-up">
 
             {/* Header with Yena branding */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#27282B]">
@@ -162,9 +162,16 @@ export const Preview: React.FC<PreviewProps> = ({
                         <div className="h-6 w-40 rounded bg-white/5 animate-shimmer" />
                     </div>
                 ) : (
-                    <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#EEEFF1]">
-                        {data.firstName} {data.lastName}
-                    </h2>
+                    <div className="flex items-center justify-center gap-2">
+                        <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#EEEFF1]">
+                            {data.firstName} {data.lastName}
+                        </h2>
+                        {data.connectionDegree && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#266DF0]/10 border border-[#266DF0]/20 text-xs font-medium text-[#C2D6FF]">
+                                {data.connectionDegree}
+                            </span>
+                        )}
+                    </div>
                 )}
             </div>
 
@@ -217,7 +224,7 @@ export const Preview: React.FC<PreviewProps> = ({
                                 value={<CompanyTag name={data.currentCompany} />}
                             />
                         )}
-                        {(data.headline || data.experiences?.[0]?.title) && (
+                        {data.experiences?.[0]?.title && (
                             <InfoRow
                                 icon={
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,7 +232,7 @@ export const Preview: React.FC<PreviewProps> = ({
                                     </svg>
                                 }
                                 label="Job title"
-                                value={data.experiences?.[0]?.title || data.headline?.split(' at ')[0] || '—'}
+                                value={data.experiences[0].title}
                             />
                         )}
                         <InfoRow

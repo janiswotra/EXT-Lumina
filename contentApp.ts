@@ -17,7 +17,7 @@ const injectMarker = () => {
 
     const marker = document.createElement('div');
     marker.id = 'lumina-extension-installed';
-    marker.setAttribute('data-version', '1.1.0');
+    marker.setAttribute('data-version', '1.0.24');
     marker.setAttribute('data-extension-id', chrome.runtime.id || '');
     marker.style.display = 'none';
     document.body.appendChild(marker);
@@ -30,44 +30,6 @@ if (document.readyState === 'loading') {
 } else {
     injectMarker();
 }
-
-// ============================================
-// 1.5. Auto-sync harvested profiles when Yena app opens
-// ============================================
-const triggerAutoSync = async () => {
-    console.log('[Lumina contentApp] Triggering auto-sync of harvested profiles...');
-
-    try {
-        chrome.runtime.sendMessage({ type: 'SYNC_HARVEST' }, (response: any) => {
-            if (chrome.runtime.lastError) {
-                console.error('[Lumina contentApp] Auto-sync error:', chrome.runtime.lastError);
-                return;
-            }
-
-            if (response?.success && response?.data) {
-                const { imported, updated, skipped } = response.data;
-                const total = imported + updated;
-                if (total > 0) {
-                    console.log(`[Lumina contentApp] ✅ Auto-synced: ${imported} imported, ${updated} updated, ${skipped} skipped`);
-
-                    // Notify the web app about the sync
-                    window.postMessage({
-                        source: 'LUMINA_EXTENSION_RESULT',
-                        type: 'HARVEST_SYNCED',
-                        payload: response.data
-                    }, '*');
-                } else {
-                    console.log('[Lumina contentApp] No new profiles to sync');
-                }
-            }
-        });
-    } catch (err) {
-        console.error('[Lumina contentApp] Auto-sync failed:', err);
-    }
-};
-
-// Trigger auto-sync 3 seconds after page load (give the app time to initialize)
-setTimeout(triggerAutoSync, 3000);
 
 // ============================================
 // 2. Listen for messages FROM the web app
@@ -144,7 +106,7 @@ window.addEventListener('message', async (event) => {
             source: 'LUMINA_EXTENSION_ACK',
             type: 'PONG',
             success: true,
-            version: '1.1.0'
+            version: '1.0.24'
         }, '*');
         return;
     }

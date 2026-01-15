@@ -14,6 +14,22 @@ export interface Education {
   endDate?: string;
 }
 
+export interface Certification {
+  name: string;
+  issuer?: string;
+  issueDate?: string;
+}
+
+export interface Course {
+  name: string;
+  institution?: string;
+}
+
+export interface Organization {
+  name: string;
+  role?: string;
+}
+
 export interface CandidateProfile {
   firstName: string;
   lastName: string;
@@ -25,10 +41,14 @@ export interface CandidateProfile {
   profilePictureUrl?: string;
   email?: string;
   phone?: string;
+  connectionDegree?: string; // "1st", "2nd", "3rd", "1st+", etc.
   experiences: Experience[];
   educations: Education[];
   skills: string[];
   languages: string[];
+  certifications?: Certification[];
+  courses?: Course[];
+  organizations?: Organization[];
 }
 
 export interface Job {
@@ -73,18 +93,4 @@ export type ExtensionMessage =
   | { type: 'GET_STAGES'; payload?: { jobId: string } }
   | { type: 'GET_LISTS' }
   | { type: 'CHECK_FOR_UPDATES'; payload: { linkedinUrl: string; profileId?: string } }
-  // Harvest Queue messages
-  | { type: 'GET_HARVEST_STATUS' }
-  | { type: 'GET_HARVEST_QUEUE' }
-  | { type: 'SYNC_HARVEST' }
-  | { type: 'CLEAR_SYNCED' }
   | { type: 'SET_API_KEY'; payload: { apiKey: string } };
-
-// Harvest Sync Response
-export interface HarvestSyncResponse {
-  imported: number;
-  updated: number;
-  skipped: number;
-  errors: string[];
-}
-

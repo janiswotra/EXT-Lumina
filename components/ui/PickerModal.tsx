@@ -68,8 +68,6 @@ export const PickerModal: React.FC<PickerModalProps> = ({
         opt.sublabel?.toLowerCase().includes(search.toLowerCase())
     );
 
-    // Debug: Log options and filtered results
-    console.log('[PickerModal] Options received:', options.length, 'Search:', search, 'Filtered:', filteredOptions.length);
 
     return (
         <div className="absolute inset-0 z-50 flex flex-col pointer-events-auto">
@@ -106,7 +104,7 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder={searchPlaceholder}
-                            className="w-full h-[32px] pl-8 pr-3 bg-transparent rounded-lg text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] placeholder:text-[rgba(255,255,255,0.29)] shadow-[inset_0px_0px_0px_1px_#27282B] focus:shadow-[inset_0px_0px_0px_1px_#864AFF] focus:outline-none transition-shadow duration-140"
+                            className="w-full h-[32px] pl-8 pr-3 bg-transparent rounded-lg text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] placeholder:text-[rgba(255,255,255,0.29)] shadow-[inset_0px_0px_0px_1px_#27282B] focus:shadow-[inset_0px_0px_0px_1px_#10B981] focus:outline-none transition-shadow duration-140"
                         />
                     </div>
                 </div>
@@ -135,7 +133,7 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                                 className={cn(
                                     "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-all duration-140",
                                     selectedId === option.id
-                                        ? "bg-[#2F1E5A] shadow-[inset_0px_0px_0px_1px_rgba(134,74,255,0.32)] text-[#EEEFF1]"
+                                        ? "bg-[#864AFF]/10 shadow-[inset_0px_0px_0px_1px_rgba(134,74,255,0.32)] text-[#EEEFF1]"
                                         : "hover:bg-[#27282B] text-[#EEEFF1]"
                                 )}
                             >

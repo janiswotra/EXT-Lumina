@@ -25,7 +25,7 @@ interface SidebarProps {
 
 declare const chrome: any;
 
-// Info Row Component (Attio-style)
+// Info Row Component (Attio-style) - improved layout
 const InfoRow: React.FC<{
     icon: React.ReactNode;
     label: string;
@@ -33,49 +33,51 @@ const InfoRow: React.FC<{
     editable?: boolean;
     onChange?: (value: string) => void;
 }> = ({ icon, label, value, editable, onChange }) => (
-    <div className="flex items-center gap-4 py-3.5 border-b border-white/5 last:border-0">
-        <div className="w-5 flex justify-center text-gray-500 shrink-0">
+    <div className="flex items-start gap-3 py-3 border-b border-white/5 last:border-0">
+        <div className="w-5 flex justify-center text-gray-500 shrink-0 mt-0.5">
             {icon}
         </div>
-        <span className="text-sm text-gray-400 w-28 shrink-0">{label}</span>
-        {editable ? (
-            <input
-                type="text"
-                value={value || ''}
-                onChange={(e) => onChange?.(e.target.value)}
-                className="flex-1 text-sm text-white bg-transparent border-0 p-0 focus:outline-none focus:ring-0 placeholder-gray-600"
-                placeholder={`Enter ${label.toLowerCase()}...`}
-            />
-        ) : (
-            <span className="text-sm text-white truncate flex-1">{value || '—'}</span>
-        )}
+        <div className="flex-1 min-w-0">
+            <span className="text-xs text-gray-500 uppercase tracking-wider block mb-1">{label}</span>
+            {editable ? (
+                <input
+                    type="text"
+                    value={value || ''}
+                    onChange={(e) => onChange?.(e.target.value)}
+                    className="w-full text-sm text-white bg-white/5 border border-white/10 rounded-lg px-3 py-2 focus:outline-none focus:border-[#864AFF]/50 placeholder-gray-600 transition-colors"
+                    placeholder={`Enter ${label.toLowerCase()}...`}
+                />
+            ) : (
+                <span className="text-sm text-white block break-words leading-relaxed">{value || '—'}</span>
+            )}
+        </div>
     </div>
 );
 
-// Selector Button Component (triggers modal)
+// Selector Button Component (triggers modal) - purple theme
 const SelectorButton: React.FC<{
     label: string;
     value?: string;
     placeholder: string;
     onClick: () => void;
     isLoading?: boolean;
-    color?: 'accent' | 'purple';
-}> = ({ label, value, placeholder, onClick, isLoading, color = 'accent' }) => (
+    color?: 'primary' | 'secondary';
+}> = ({ label, value, placeholder, onClick, isLoading, color = 'primary' }) => (
     <button
         onClick={onClick}
         disabled={isLoading}
         className={cn(
             "w-full flex items-center justify-between px-4 py-3.5 rounded-xl border transition-all",
             "hover:bg-white/5 active:scale-[0.99]",
-            color === 'accent'
-                ? "bg-accent/5 border-accent/20 hover:border-accent/40"
-                : "bg-purple-500/5 border-purple-500/20 hover:border-purple-500/40"
+            color === 'primary'
+                ? "bg-[#864AFF]/5 border-[#864AFF]/20 hover:border-[#864AFF]/40"
+                : "bg-white/5 border-white/10 hover:border-white/20"
         )}
     >
         <div className="flex items-center gap-3">
             <div className={cn(
                 "w-2.5 h-2.5 rounded-full",
-                color === 'accent' ? "bg-accent" : "bg-purple-500"
+                color === 'primary' ? "bg-[#864AFF]" : "bg-gray-500"
             )} />
             <div className="text-left">
                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-0.5">{label}</p>
@@ -234,7 +236,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setLoadingJobs(true);
         const cached = await getCachedData('lumina_cache_jobs');
         if (cached) {
-            console.log('[Yena Sidebar] Using cached jobs:', cached.length);
             setJobs(cached);
             setLoadingJobs(false);
             return;
@@ -242,7 +243,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         try {
             chrome.runtime.sendMessage({ type: 'GET_JOBS' }, (response: any) => {
-                console.log('[Yena Sidebar] GET_JOBS raw response:', response);
                 setLoadingJobs(false);
                 if (response && response.success && response.data) {
                     // Handle various response formats: { jobs: [...] }, [...], or { data: [...] }
@@ -254,7 +254,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     } else if (response.data.data && Array.isArray(response.data.data)) {
                         jobsData = response.data.data;
                     }
-                    console.log('[Yena Sidebar] Parsed jobs:', jobsData.length, jobsData);
                     setJobs(jobsData);
                     if (jobsData.length > 0) {
                         setCachedData('lumina_cache_jobs', jobsData);
@@ -273,7 +272,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setLoadingStages(true);
         const cached = await getCachedData('lumina_cache_stages');
         if (cached) {
-            console.log('[Yena Sidebar] Using cached stages:', cached.length);
             setStages(cached);
             setLoadingStages(false);
             return;
@@ -281,7 +279,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         try {
             chrome.runtime.sendMessage({ type: 'GET_STAGES' }, (response: any) => {
-                console.log('[Yena Sidebar] GET_STAGES raw response:', response);
                 setLoadingStages(false);
                 if (response && response.success && response.data) {
                     let stagesData: Stage[] = [];
@@ -292,7 +289,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     } else if (response.data.data && Array.isArray(response.data.data)) {
                         stagesData = response.data.data;
                     }
-                    console.log('[Yena Sidebar] Parsed stages:', stagesData.length, stagesData);
                     setStages(stagesData);
                     if (stagesData.length > 0) {
                         setCachedData('lumina_cache_stages', stagesData);
@@ -312,7 +308,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setSelectedStage(null);
         try {
             chrome.runtime.sendMessage({ type: 'GET_STAGES', payload: { jobId } }, (response: any) => {
-                console.log('[Yena Sidebar] GET_STAGES for job raw response:', response);
                 setLoadingStages(false);
                 if (response && response.success && response.data) {
                     let stagesData: Stage[] = [];
@@ -323,12 +318,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     } else if (response.data.data && Array.isArray(response.data.data)) {
                         stagesData = response.data.data;
                     }
-                    console.log(`[Yena Sidebar] Loaded ${stagesData.length} stages for job ${jobId}`);
                     setStages(stagesData);
                     // Auto-select the first stage when stages are loaded for a job
                     if (stagesData.length > 0) {
                         setSelectedStage(stagesData[0]);
-                        console.log('[Yena Sidebar] Auto-selected first stage:', stagesData[0].name);
                     }
                 } else {
                     console.warn('[Yena Sidebar] GET_STAGES for job failed:', response);
@@ -345,7 +338,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setLoadingLists(true);
         const cached = await getCachedData('lumina_cache_lists');
         if (cached) {
-            console.log('[Yena Sidebar] Using cached lists:', cached.length);
             setLists(cached);
             setLoadingLists(false);
             return;
@@ -353,7 +345,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         try {
             chrome.runtime.sendMessage({ type: 'GET_LISTS' }, (response: any) => {
-                console.log('[Yena Sidebar] GET_LISTS raw response:', response);
                 setLoadingLists(false);
                 if (response && response.success && response.data) {
                     let listsData: List[] = [];
@@ -364,7 +355,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     } else if (response.data.data && Array.isArray(response.data.data)) {
                         listsData = response.data.data;
                     }
-                    console.log('[Yena Sidebar] Parsed lists:', listsData.length, listsData);
                     setLists(listsData);
                     if (listsData.length > 0) {
                         setCachedData('lumina_cache_lists', listsData);
@@ -419,8 +409,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         sublabel: job.company || undefined,
     }));
 
-    // Debug: Log job options whenever they change
-    console.log('[Yena Sidebar] jobOptions for picker:', jobOptions.length, jobOptions.map(j => j.label));
 
     const stageOptions: PickerOption[] = stages.map(stage => ({
         id: stage.id,
@@ -439,7 +427,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // --- RENDER: Auth Screen ---
     if (authStatus === 'MISSING_KEY' || authStatus === 'CHECKING') {
         return (
-            <div className="fixed right-0 top-0 h-full w-[420px] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
+            <div className="fixed right-0 top-0 h-full w-[480px] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
                 {/* Header */}
                 <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -459,8 +447,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                 {/* Auth Content */}
                 <div className="flex-1 flex flex-col items-center justify-center p-8">
-                    <div className="w-20 h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-8">
-                        <svg className="w-10 h-10 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-20 h-20 rounded-2xl bg-[#864AFF]/10 border border-[#864AFF]/20 flex items-center justify-center mb-8">
+                        <svg className="w-10 h-10 text-[#864AFF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                         </svg>
                     </div>
@@ -498,7 +486,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     // --- RENDER: Authenticated Sidebar ---
     return (
-        <div className="fixed right-0 top-0 h-full w-[420px] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
+        <div className="fixed right-0 top-0 h-full w-[480px] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
 
             {/* Header */}
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between shrink-0">
@@ -514,18 +502,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors",
                         isExisting
-                            ? "bg-amber-500/10 border-amber-500/20"
-                            : "bg-emerald-500/10 border-emerald-500/20"
+                            ? "bg-[#864AFF]/10 border-[#864AFF]/20"
+                            : "bg-amber-500/10 border-amber-500/20"
                     )}>
                         <div className={cn(
                             "w-2 h-2 rounded-full animate-pulse",
-                            isExisting ? "bg-amber-500" : "bg-emerald-500"
+                            isExisting ? "bg-[#864AFF]" : "bg-amber-500"
                         )} />
                         <span className={cn(
                             "text-xs font-medium",
-                            isExisting ? "text-amber-400" : "text-emerald-400"
+                            isExisting ? "text-[#864AFF]" : "text-amber-400"
                         )}>
-                            {isExisting ? 'Existing Record' : 'New Record'}
+                            {isExisting ? 'In Yena' : 'New Candidate'}
                         </span>
                     </div>
                     <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
@@ -541,8 +529,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                 {/* Profile Header */}
                 <div className="px-6 py-6 border-b border-white/5">
-                    <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-accent/30 to-purple-500/30 p-0.5 shrink-0">
+                    <div className="flex items-start gap-4">
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#864AFF]/30 to-purple-500/30 p-0.5 shrink-0">
                             <div className="w-full h-full rounded-full overflow-hidden bg-[#1a1b1e] flex items-center justify-center">
                                 {formData.profilePictureUrl ? (
                                     <img src={formData.profilePictureUrl} alt="Profile" className="w-full h-full object-cover" />
@@ -552,8 +540,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </div>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <h3 className="text-xl font-semibold text-white truncate">{formData.firstName} {formData.lastName}</h3>
-                            <p className="text-sm text-gray-400 truncate mt-0.5">{formData.headline}</p>
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-xl font-semibold text-white">{formData.firstName} {formData.lastName}</h3>
+                                {formData.connectionDegree && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#266DF0]/10 border border-[#266DF0]/20 text-xs font-medium text-[#C2D6FF]">
+                                        {formData.connectionDegree}
+                                    </span>
+                                )}
+                            </div>
+                            <p className="text-sm text-gray-400 mt-1 leading-relaxed">{formData.headline}</p>
                         </div>
                     </div>
                 </div>
@@ -566,7 +561,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         placeholder="Select a job"
                         onClick={() => setShowJobPicker(true)}
                         isLoading={loadingJobs}
-                        color="accent"
+                        color="primary"
                     />
 
                     {selectedJob && (
@@ -576,7 +571,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             placeholder="Select stage"
                             onClick={() => setShowStagePicker(true)}
                             isLoading={loadingStages}
-                            color="accent"
+                            color="primary"
                         />
                     )}
 
@@ -586,7 +581,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         placeholder="Select a list (optional)"
                         onClick={() => setShowListPicker(true)}
                         isLoading={loadingLists}
-                        color="purple"
+                        color="secondary"
                     />
                 </div>
 
@@ -651,16 +646,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
 
                     {formData.experiences && formData.experiences.length > 0 && (
-                        <CollapsibleSection title="Experience" count={formData.experiences.length}>
+                        <CollapsibleSection title="Experience" count={formData.experiences.length} defaultExpanded={true}>
                             <div className="space-y-3 pb-4">
                                 {formData.experiences.map((exp: any, i: number) => (
-                                    <div key={i} className="flex items-start gap-3 py-2">
-                                        <div className="w-2 h-2 rounded-full bg-accent mt-2 shrink-0" />
+                                    <div key={i} className="flex items-start gap-3 py-2 px-3 bg-white/[0.02] rounded-lg border border-white/5">
+                                        <div className="w-2 h-2 rounded-full bg-[#864AFF] mt-2 shrink-0" />
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-white truncate">{exp.title}</p>
-                                            <p className="text-xs text-gray-500 truncate">{exp.company} • {exp.startDate} - {exp.endDate}</p>
+                                            <p className="text-sm font-medium text-white">{exp.title}</p>
+                                            <p className="text-xs text-gray-400 mt-0.5">{exp.company} • {exp.startDate} - {exp.endDate || 'Present'}</p>
                                             {exp.description && (
-                                                <p className="text-xs text-gray-400 mt-1.5 line-clamp-3 whitespace-pre-wrap">
+                                                <p className="text-xs text-gray-500 mt-2 leading-relaxed whitespace-pre-wrap">
                                                     {exp.description}
                                                 </p>
                                             )}
@@ -675,11 +670,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <CollapsibleSection title="Education" count={formData.educations.length}>
                             <div className="space-y-3 pb-4">
                                 {formData.educations.map((edu: any, i: number) => (
-                                    <div key={i} className="flex items-start gap-3 py-2">
-                                        <div className="w-2 h-2 rounded-full bg-purple-500 mt-2 shrink-0" />
+                                    <div key={i} className="flex items-start gap-3 py-2 px-3 bg-white/[0.02] rounded-lg border border-white/5">
+                                        <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 shrink-0" />
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-white truncate">{edu.school}</p>
-                                            <p className="text-xs text-gray-500 truncate">{edu.degree}{edu.field ? ` • ${edu.field}` : ''}</p>
+                                            <p className="text-sm font-medium text-white">{edu.school}</p>
+                                            <p className="text-xs text-gray-400 mt-0.5">{edu.degree}{edu.field ? ` • ${edu.field}` : ''}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -689,15 +684,67 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     {formData.skills && formData.skills.length > 0 && (
                         <CollapsibleSection title="Skills" count={formData.skills.length}>
-                            <div className="flex flex-wrap gap-2 pb-4">
-                                {formData.skills.slice(0, 15).map((skill, i) => (
-                                    <span key={i} className="text-xs text-gray-300 bg-white/5 px-2.5 py-1 rounded-lg border border-white/10">
+                            <div className="flex flex-wrap gap-1.5 pb-4 max-h-[200px] overflow-y-auto">
+                                {formData.skills.map((skill, i) => (
+                                    <span key={i} className="text-xs text-gray-300 bg-white/5 px-2 py-1 rounded-md border border-white/10 hover:border-[#864AFF]/30 hover:bg-[#864AFF]/5 transition-colors cursor-default">
                                         {skill}
                                     </span>
                                 ))}
-                                {formData.skills.length > 15 && (
-                                    <span className="text-xs text-gray-500 py-1">+{formData.skills.length - 15} more</span>
-                                )}
+                            </div>
+                        </CollapsibleSection>
+                    )}
+
+                    {formData.languages && formData.languages.length > 0 && (
+                        <CollapsibleSection title="Languages" count={formData.languages.length} defaultExpanded={false}>
+                            <div className="flex flex-wrap gap-1.5 pb-4">
+                                {formData.languages.map((language: string, i: number) => (
+                                    <span key={i} className="text-xs text-gray-300 bg-white/5 px-2 py-1 rounded-md border border-white/10">
+                                        {language}
+                                    </span>
+                                ))}
+                            </div>
+                        </CollapsibleSection>
+                    )}
+
+                    {formData.certifications && formData.certifications.length > 0 && (
+                        <CollapsibleSection title="Certifications" count={formData.certifications.length} defaultExpanded={false}>
+                            <div className="space-y-3 pb-4">
+                                {formData.certifications.map((cert: any, i: number) => (
+                                    <div key={i} className="flex items-start gap-3 py-2 px-3 bg-white/[0.02] rounded-lg border border-white/5">
+                                        <div className="w-2 h-2 rounded-full bg-green-500 mt-2 shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-white">{cert.name}</p>
+                                            {cert.issuer && <p className="text-xs text-gray-400 mt-0.5">{cert.issuer}</p>}
+                                            {cert.issueDate && <p className="text-xs text-gray-500 mt-0.5">{cert.issueDate}</p>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </CollapsibleSection>
+                    )}
+
+                    {formData.courses && formData.courses.length > 0 && (
+                        <CollapsibleSection title="Courses" count={formData.courses.length} defaultExpanded={false}>
+                            <div className="space-y-2 pb-4">
+                                {formData.courses.map((course: any, i: number) => (
+                                    <div key={i} className="py-2 px-3 bg-white/[0.02] rounded-lg border border-white/5">
+                                        <p className="text-sm font-medium text-white">{course.name}</p>
+                                        {course.institution && <p className="text-xs text-gray-400 mt-0.5">{course.institution}</p>}
+                                    </div>
+                                ))}
+                            </div>
+                        </CollapsibleSection>
+                    )}
+
+                    {formData.organizations && formData.organizations.length > 0 && (
+                        <CollapsibleSection title="Organizations" count={formData.organizations.length} defaultExpanded={false}>
+                            <div className="space-y-2 pb-4">
+                                {formData.organizations.map((org: any, i: number) => (
+                                    <div key={i} className="py-2 px-3 bg-white/[0.02] rounded-lg border border-white/5">
+                                        <p className="text-sm font-medium text-white">{org.name}</p>
+                                        {org.role && <p className="text-xs text-gray-400 mt-0.5">{org.role}</p>}
+                                    </div>
+                                ))}
                             </div>
                         </CollapsibleSection>
                     )}
@@ -715,8 +762,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onClick={handleSaveClick}
                     isLoading={isLoading}
                     className={cn(
-                        "w-full py-4 text-base shadow-lg shadow-accent/20",
-                        isSuccess && "bg-green-500 hover:bg-green-600"
+                        "w-full py-4 text-base shadow-lg",
+                        isSuccess && "bg-green-600 hover:bg-green-500"
                     )}
                 >
                     {isSuccess ? (

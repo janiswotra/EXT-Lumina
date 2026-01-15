@@ -362,12 +362,22 @@ export const parseProfile = (): CandidateProfile => {
 
           if (uniqueLines.length >= 1) {
             // In nested structure: first line is the title (position), company comes from parent
-            const title = uniqueLines[0];
+            let title = uniqueLines[0];
             const company = companyFromParent;
             let startDate = '';
             let endDate = '';
             let loc = '';
             let description = '';
+
+            // Extract title from "Title at Company" format if present
+            if (title.includes(' at ')) {
+              const parts = title.split(' at ');
+              title = parts[0].trim();
+            }
+
+            // Employment type keywords to filter out
+            const employmentTypes = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
+            const workLocationTypes = ['on-site', 'remote', 'hybrid'];
 
             const dateLineIndex = uniqueLines.findIndex(txt => /\d{4}/.test(txt) || txt.toLowerCase().includes('present'));
 
@@ -380,8 +390,13 @@ export const parseProfile = (): CandidateProfile => {
               // Check for location after date
               if (uniqueLines[dateLineIndex + 1]) {
                 const possibleLoc = uniqueLines[dateLineIndex + 1];
-                if (possibleLoc.length < 50 && !possibleLoc.includes('·') &&
-                  !possibleLoc.includes(' yr') && !possibleLoc.includes(' mo')) {
+                const lower = possibleLoc.toLowerCase();
+                if (possibleLoc.length < 50 &&
+                    !possibleLoc.includes('·') &&
+                    !possibleLoc.includes(' yr') &&
+                    !possibleLoc.includes(' mo') &&
+                    !employmentTypes.includes(lower) &&
+                    !workLocationTypes.includes(lower)) {
                   loc = possibleLoc;
                 }
               }
@@ -423,12 +438,42 @@ export const parseProfile = (): CandidateProfile => {
         const uniqueLines = [...new Set(visualLines)];
 
         if (uniqueLines.length >= 2) {
-          const title = uniqueLines[0];
-          let company = uniqueLines[1];
+          let title = uniqueLines[0];
+          let company = '';
           let startDate = '';
           let endDate = '';
           let loc = '';
           let description = '';
+
+          // Employment type keywords to filter out (LinkedIn 2024/2025 structure)
+          const employmentTypes = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
+          const workLocationTypes = ['on-site', 'remote', 'hybrid'];
+
+          // Extract company from title if it contains " at " (e.g., "Partner (M&A) at MCF Corporate Finance")
+          if (title.includes(' at ')) {
+            const parts = title.split(' at ');
+            if (parts.length === 2) {
+              title = parts[0].trim();
+              company = parts[1].trim();
+            }
+          }
+
+          // If company not found in title, look for it in subsequent lines
+          if (!company) {
+            // Filter out employment types and location types
+            const filteredLines = uniqueLines.slice(1).filter(line => {
+              const lower = line.toLowerCase();
+              return !employmentTypes.includes(lower) &&
+                     !workLocationTypes.includes(lower) &&
+                     !line.includes(' yr') &&
+                     !line.includes(' mo');
+            });
+
+            // First filtered line should be the company (before dates)
+            if (filteredLines.length > 0) {
+              company = filteredLines[0];
+            }
+          }
 
           const dateLineIndex = uniqueLines.findIndex(txt => /\d{4}/.test(txt) || txt.toLowerCase().includes('present'));
 
@@ -438,16 +483,27 @@ export const parseProfile = (): CandidateProfile => {
             startDate = dates.startDate;
             endDate = dates.endDate;
 
-            if (dateLineIndex > 1) {
-              company = uniqueLines[dateLineIndex - 1];
-              if (company.includes(' yr') || company.includes(' mo')) {
-                company = uniqueLines[0];
+            // If company still not found, look before date line (fallback)
+            if (!company && dateLineIndex > 1) {
+              const candidateCompany = uniqueLines[dateLineIndex - 1];
+              const lower = candidateCompany.toLowerCase();
+              if (!employmentTypes.includes(lower) &&
+                  !workLocationTypes.includes(lower) &&
+                  !candidateCompany.includes(' yr') &&
+                  !candidateCompany.includes(' mo')) {
+                company = candidateCompany;
               }
             }
 
+            // Check for location after date
             if (uniqueLines[dateLineIndex + 1]) {
               const possibleLoc = uniqueLines[dateLineIndex + 1];
-              if (possibleLoc.length < 50 && !possibleLoc.includes('·')) {
+              const lower = possibleLoc.toLowerCase();
+              // Location should not be employment type or work location type
+              if (possibleLoc.length < 50 &&
+                  !possibleLoc.includes('·') &&
+                  !employmentTypes.includes(lower) &&
+                  !workLocationTypes.includes(lower)) {
                 loc = possibleLoc;
               }
             }
@@ -555,6 +611,77 @@ export const parseProfile = (): CandidateProfile => {
     });
   }
 
+  // --- 7. Certifications ---
+  const certifications: any[] = [];
+  const certSection = getSectionByTitle('Licenses & certifications') || getSectionByTitle('Certifications');
+  if (certSection) {
+    const items = getListItems(certSection);
+    items.forEach(item => {
+      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+        .map(el => el.textContent?.trim() || '')
+        .filter(t => t);
+
+      if (visualLines.length > 0) {
+        const name = visualLines[0];
+        const issuer = visualLines.length > 1 ? visualLines[1] : undefined;
+        const issueDate = visualLines.find(line => /\d{4}/.test(line));
+
+        certifications.push({
+          name,
+          issuer,
+          issueDate
+        });
+      }
+    });
+  }
+
+  // --- 8. Courses ---
+  const courses: any[] = [];
+  const courseSection = getSectionByTitle('Courses');
+  if (courseSection) {
+    const items = getListItems(courseSection);
+    items.forEach(item => {
+      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+        .map(el => el.textContent?.trim() || '')
+        .filter(t => t);
+
+      if (visualLines.length > 0) {
+        const name = visualLines[0];
+        const institution = visualLines.length > 1 ? visualLines[1] : undefined;
+
+        courses.push({
+          name,
+          institution
+        });
+      }
+    });
+  }
+
+  // --- 9. Organizations ---
+  const organizations: any[] = [];
+  const orgSection = getSectionByTitle('Organizations');
+  if (orgSection) {
+    const items = getListItems(orgSection);
+    items.forEach(item => {
+      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+        .map(el => el.textContent?.trim() || '')
+        .filter(t => t);
+
+      if (visualLines.length > 0) {
+        const name = visualLines[0];
+        const role = visualLines.length > 1 ? visualLines[1] : undefined;
+
+        organizations.push({
+          name,
+          role
+        });
+      }
+    });
+  }
+
+  // --- 10. Connection Degree ---
+  const connectionDegree = getConnectionDegree();
+
   return {
     firstName: firstName || 'Unknown',
     lastName: lastName || '',
@@ -564,10 +691,14 @@ export const parseProfile = (): CandidateProfile => {
     currentCompany,
     about,
     profilePictureUrl,
+    connectionDegree,
     experiences,
     educations,
     skills,
-    languages
+    languages,
+    certifications,
+    courses,
+    organizations
   };
 };
 
@@ -585,6 +716,27 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
 
   // Name: Try multiple strategies
   let fullName = '';
+
+  // Helper function to check if text looks like a person's name
+  const looksLikePersonName = (text: string): boolean => {
+    if (!text || text.length < 3 || text.length > 50) return false;
+
+    const words = text.trim().split(/\s+/);
+    // Person names are typically 2-4 words
+    if (words.length < 2 || words.length > 5) return false;
+
+    // Each word should start with uppercase (names are capitalized)
+    const allCapitalized = words.every(word => /^[A-Z]/.test(word));
+    if (!allCapitalized) return false;
+
+    // Should not contain numbers
+    if (/\d/.test(text)) return false;
+
+    // Should not contain special business characters
+    if (/[&@#$%]/.test(text)) return false;
+
+    return true;
+  };
 
   // Helper function to check if text looks like a company name rather than a person
   const looksLikeCompanyName = (text: string): boolean => {
@@ -604,6 +756,17 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
       /\bPartners$/i,     // Partners (e.g., Fortlane Partners)
       /\bCapital$/i,      // Capital (e.g., Barclays Capital)
       /\bBank$/i,         // Bank
+      /\bFinance$/i,      // Finance (e.g., MCF Corporate Finance)
+      /\bCorporate\b/i,   // Contains "Corporate"
+      /\bConsulting$/i,   // Consulting
+      /\bAdvisors?$/i,    // Advisor/Advisors
+      /\bHoldings?$/i,    // Holding/Holdings
+      /\bVentures?$/i,    // Venture/Ventures
+      /\bServices$/i,     // Services
+      /\bSolutions$/i,    // Solutions
+      /\bTechnolog(y|ies)$/i, // Technology/Technologies
+      /\bManagement$/i,   // Management
+      /\bInvestments?$/i, // Investment/Investments
     ];
     return companyPatterns.some(pattern => pattern.test(text));
   };
@@ -612,21 +775,38 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
   const profileNameEl = document.querySelector('[data-x--lead-name], [class*="profile-topcard"] [class*="_name_"]');
   if (profileNameEl) {
     const text = profileNameEl.textContent?.trim();
-    if (text && !looksLikeCompanyName(text)) {
+    if (text && looksLikePersonName(text) && !looksLikeCompanyName(text)) {
       fullName = text;
     }
   }
 
   // Strategy 2: span with _name_ class but NOT inside company/account sections
+  // Prioritize elements that look like person names
   if (!fullName) {
     const nameSpans = document.querySelectorAll('span[class*="_name_"]');
+    const candidates: string[] = [];
     for (const span of nameSpans) {
       const text = span.textContent?.trim();
       // Skip if it's inside an account/company section
       const isInsideCompanySection = span.closest('[class*="account"], [class*="company"], [class*="_savedAccount_"]');
-      if (text && !isInsideCompanySection && !looksLikeCompanyName(text) && text.length < 60) {
+      if (text && !isInsideCompanySection && text.length < 60) {
+        candidates.push(text);
+      }
+    }
+    // First pass: find one that looks like a person name
+    for (const text of candidates) {
+      if (looksLikePersonName(text) && !looksLikeCompanyName(text)) {
         fullName = text;
         break;
+      }
+    }
+    // Second pass: fall back to any that doesn't look like company
+    if (!fullName) {
+      for (const text of candidates) {
+        if (!looksLikeCompanyName(text)) {
+          fullName = text;
+          break;
+        }
       }
     }
   }
@@ -637,7 +817,7 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     for (const el of headingTextEls) {
       const text = el.textContent?.trim();
       if (text && !text.includes('Lead Page') && !text.includes('information for') &&
-        !looksLikeCompanyName(text) && text.length < 60) {
+        looksLikePersonName(text) && !looksLikeCompanyName(text) && text.length < 60) {
         fullName = text;
         break;
       }
@@ -650,7 +830,7 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     for (const h of h1Els) {
       const text = h.textContent?.trim();
       if (text && !text.includes('Lead Page') && !text.includes('information for') &&
-        !text.includes('insights') && !looksLikeCompanyName(text) && text.length < 60) {
+        !text.includes('insights') && looksLikePersonName(text) && !looksLikeCompanyName(text) && text.length < 60) {
         fullName = text;
         break;
       }
@@ -924,6 +1104,30 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
         }
       }
 
+      // Fallback: If no company link found, try to extract from spans
+      // Company is usually the second line after the title in Sales Navigator
+      if (!company) {
+        const allSpans = Array.from(item.querySelectorAll('span')).map(s => s.textContent?.trim() || '').filter(t => t.length > 0);
+        // Look for company-like text that's not a date, duration, or location
+        for (const text of allSpans) {
+          // Skip if it's the title we already found
+          if (text === title) continue;
+          // Skip dates, durations, locations
+          if (/\d{4}/.test(text)) continue; // Has year
+          if (/\d+\s*(yr|mo|year|month)/i.test(text)) continue; // Duration
+          if (text.includes('Present')) continue;
+          if (text.length > 100) continue; // Too long, probably description
+          if (text.includes('Show more') || text.includes('Show less')) continue;
+          // Skip if it looks like a location (has comma and common location words)
+          if (text.includes(',') && (text.includes('Germany') || text.includes('United') || text.includes('Area') || text.includes('Remote'))) continue;
+          // This might be the company name
+          if (text.length >= 2 && text.length < 80) {
+            company = text;
+            break;
+          }
+        }
+      }
+
       // Dates and duration from spans
       let startDate = '';
       let endDate = '';
@@ -935,8 +1139,8 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
         const text = span.textContent?.trim();
         if (!text) continue;
 
-        // Date range pattern: "Jan 2024–Present" or "Aug 2019–Nov 2021"
-        const dateMatch = text.match(/([A-Za-z]{3}\s\d{4}|[A-Za-z]+\s\d{4})\s*[–-]\s*(Present|[A-Za-z]{3}\s\d{4}|[A-Za-z]+\s\d{4})/i);
+        // Date range pattern: "Jan 2024–Present", "Aug 2019–Nov 2021", or "2006–2009"
+        const dateMatch = text.match(/([A-Za-z]{3}\s\d{4}|[A-Za-z]+\s\d{4}|\d{4})\s*[–-]\s*(Present|[A-Za-z]{3}\s\d{4}|[A-Za-z]+\s\d{4}|\d{4})/i);
         if (dateMatch && !startDate) {
           const dates = parseDateRange(text);
           startDate = dates.startDate;
@@ -1241,6 +1445,15 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
 
   console.log('[Lumina Parser] Sales Navigator profile parsed:', { firstName, lastName, experiences: experiences.length, educations: educations.length, hasPhone: !!phone, hasEmail: !!email });
 
+  // --- 7. Connection Degree ---
+  const connectionDegree = getConnectionDegree();
+
+  // Sales Navigator doesn't show certifications, courses, or organizations
+  // So we return empty arrays for these fields
+  const certifications: any[] = [];
+  const courses: any[] = [];
+  const organizations: any[] = [];
+
   return {
     firstName: firstName || 'Unknown',
     lastName: lastName || '',
@@ -1252,27 +1465,61 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     profilePictureUrl,
     email,
     phone,
+    connectionDegree,
     experiences,
     educations,
     skills,
-    languages
+    languages,
+    certifications,
+    courses,
+    organizations
   };
+};
+
+/**
+ * Extracts the connection degree from the current profile.
+ * Returns "1st", "2nd", "3rd", "1st+", or empty string if not found.
+ */
+export const getConnectionDegree = (): string => {
+  // Strategy 1: Look for .dist-value element (most reliable)
+  const degreeElement = document.querySelector('.dist-value');
+  if (degreeElement?.textContent) {
+    const text = degreeElement.textContent.trim();
+    if (text === '1st' || text === '2nd' || text === '3rd' || text === '1st+') {
+      return text;
+    }
+  }
+
+  // Strategy 2: Look for distance-badge class
+  const badge = document.querySelector('[class*="distance-badge"]');
+  if (badge?.textContent) {
+    const text = badge.textContent.trim();
+    // Extract just the degree part (e.g., "1st" from "1st degree connection")
+    const match = text.match(/(1st|2nd|3rd|1st\+)/);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  // Strategy 3: Look in text-body-small spans (fallback)
+  const spans = document.querySelectorAll('span.text-body-small');
+  for (const span of spans) {
+    const text = span.textContent?.trim() || '';
+    const match = text.match(/(1st|2nd|3rd|1st\+)/);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return '';
 };
 
 /**
  * Checks if the current profile is a 1st degree connection.
  */
 export const is1stDegreeConnection = (): boolean => {
-  const degreeElement = document.querySelector('.dist-value');
-  if (degreeElement?.textContent?.includes('1st')) return true;
-
-  const distanceSpan = document.querySelector('span.text-body-small');
-  if (distanceSpan?.textContent?.includes('1st')) return true;
-
-  const badge = document.querySelector('[class*="distance-badge"]');
-  if (badge?.textContent?.includes('1st')) return true;
-
-  return false;
+  const degree = getConnectionDegree();
+  return degree === '1st' || degree === '1st+';
 };
 
 /**

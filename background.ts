@@ -1,14 +1,5 @@
 import { API_BASE_URL } from './constants';
-import { ExtensionMessage, ApiResponse, HarvestSyncResponse } from './types';
-import {
-  getHarvestQueue,
-  getUnsyncedProfiles,
-  getUnsyncedCount,
-  getLastSyncedAt,
-  markAsSynced,
-  clearSyncedProfiles,
-  HarvestedProfile
-} from './harvest';
+import { ExtensionMessage, ApiResponse } from './types';
 
 // Fix: Declare chrome variable to resolve TS error
 declare const chrome: any;
@@ -24,6 +15,9 @@ interface ScrapeTask {
 
 const scrapeQueue: ScrapeTask[] = [];
 let isProcessingQueue = false;
+
+// Storage key for the current user ID
+const USER_ID_STORAGE_KEY = 'lumina_user_id';
 
 // Process the queue with delays to prevent detection/throttling
 const processQueue = async () => {
@@ -218,42 +212,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
-    // ============================================
-    // Harvest Queue Handlers
-    // ============================================
-
-    if (message.type === 'GET_HARVEST_STATUS') {
-      console.log('[Lumina Background] GET_HARVEST_STATUS');
-      getHarvestStatus()
-        .then(sendResponse)
-        .catch((err) => sendResponse({ success: false, message: err.message }));
-      return true;
-    }
-
-    if (message.type === 'GET_HARVEST_QUEUE') {
-      console.log('[Lumina Background] GET_HARVEST_QUEUE');
-      getHarvestQueue()
-        .then((queue) => sendResponse({ success: true, data: queue }))
-        .catch((err) => sendResponse({ success: false, message: err.message }));
-      return true;
-    }
-
-    if (message.type === 'SYNC_HARVEST') {
-      console.log('[Lumina Background] SYNC_HARVEST');
-      syncHarvestToServer()
-        .then(sendResponse)
-        .catch((err) => sendResponse({ success: false, message: err.message }));
-      return true;
-    }
-
-    if (message.type === 'CLEAR_SYNCED') {
-      console.log('[Lumina Background] CLEAR_SYNCED');
-      clearSyncedProfiles()
-        .then((count) => sendResponse({ success: true, data: { cleared: count } }))
-        .catch((err) => sendResponse({ success: false, message: err.message }));
-      return true;
-    }
-
     // Handle CHECK_FOR_UPDATES relayed from contentApp.ts via postMessage
     // This is the reliable way for Manifest V3 - through content script relay
     if (message.type === 'CHECK_FOR_UPDATES') {
@@ -359,6 +317,7 @@ async function getHeaders(): Promise<HeadersInit> {
 
 /**
  * Checks authentication status via /me endpoint.
+ * Also stores the user ID for use in profile payloads.
  */
 async function checkAuthStatus(): Promise<ApiResponse> {
   try {
@@ -375,16 +334,38 @@ async function checkAuthStatus(): Promise<ApiResponse> {
 
     if (response.status === 200) {
       const data = await response.json();
+
+      // Store the user ID for later use in profile payloads
+      if (data?.userId) {
+        await chrome.storage.local.set({ [USER_ID_STORAGE_KEY]: data.userId });
+        console.log('[Lumina Background] Stored user ID:', data.userId);
+      }
+
       return { success: true, data };
     }
 
     if (response.status === 401 || response.status === 403) {
+      // Clear stored user ID on auth failure
+      await chrome.storage.local.remove(USER_ID_STORAGE_KEY);
       return { success: false, message: 'Invalid API Key', shouldAuth: true };
     }
 
     return { success: false, message: 'Not authenticated' };
   } catch (error: any) {
     return { success: false, message: error.message };
+  }
+}
+
+/**
+ * Gets the stored user ID for including in profile payloads.
+ */
+async function getCurrentUserId(): Promise<string | null> {
+  try {
+    const result = await chrome.storage.local.get(USER_ID_STORAGE_KEY);
+    return result[USER_ID_STORAGE_KEY] || null;
+  } catch (error) {
+    console.error('[Lumina Background] Error getting user ID:', error);
+    return null;
   }
 }
 
@@ -560,6 +541,7 @@ async function fetchLists(): Promise<ApiResponse> {
 /**
  * Saves the candidate via POST /profiles
  * Transforms the extension's profile format to match the backend's expected structure
+ * Includes importedByUserId to track who imported the candidate
  */
 async function handleSaveCandidate(body: any): Promise<ApiResponse> {
   try {
@@ -567,6 +549,9 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
     if (!headers['x-api-key']) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
+
+    // Get the current user ID to include in the payload
+    const importedByUserId = await getCurrentUserId();
 
     // Transform the profile data to match backend's expected structure
     const frontendProfile = body.profile || {};
@@ -587,7 +572,9 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
         profilePictureUrl: frontendProfile.profilePictureUrl || '',
         experience: frontendProfile.experiences || frontendProfile.experience || [],
         education: frontendProfile.educations || frontendProfile.education || [],
-        skills: frontendProfile.skills || []
+        skills: frontendProfile.skills || [],
+        // Include the user ID who imported this profile
+        ...(importedByUserId && { importedByUserId })
       },
       // Optional fields
       ...(body.jobId && { jobId: body.jobId }),
@@ -620,90 +607,5 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
   } catch (error: any) {
     console.error('[Lumina Background] Save Exception:', error);
     return { success: false, message: error.message || 'Network error occurred.' };
-  }
-}
-
-// ============================================
-// Harvest Queue Functions
-// ============================================
-
-/**
- * Get the current status of the harvest queue
- */
-async function getHarvestStatus(): Promise<ApiResponse> {
-  try {
-    const unsyncedCount = await getUnsyncedCount();
-    const lastSyncedAt = await getLastSyncedAt();
-
-    return {
-      success: true,
-      data: {
-        unsyncedCount,
-        lastSyncedAt
-      }
-    };
-  } catch (error: any) {
-    console.error('[Lumina Background] getHarvestStatus error:', error);
-    return { success: false, message: error.message };
-  }
-}
-
-/**
- * Sync all unsynced harvested profiles to the Yena server
- */
-async function syncHarvestToServer(): Promise<ApiResponse> {
-  try {
-    const headers = await getHeaders() as any;
-    if (!headers['x-api-key']) {
-      return { success: false, message: 'Missing API Key', shouldAuth: true };
-    }
-
-    const unsyncedProfiles = await getUnsyncedProfiles();
-
-    if (unsyncedProfiles.length === 0) {
-      return {
-        success: true,
-        data: { imported: 0, updated: 0, skipped: 0, errors: [] }
-      };
-    }
-
-    console.log('[Lumina Background] Syncing', unsyncedProfiles.length, 'profiles...');
-
-    // Transform to API format
-    const payload = {
-      profiles: unsyncedProfiles.map((p: HarvestedProfile) => ({
-        linkedinUrl: p.linkedinUrl,
-        scrapedData: p.scrapedData,
-        capturedAt: p.capturedAt
-      }))
-    };
-
-    const response = await fetch(`${API_BASE_URL}/integrations/linkedin/harvest`, {
-      method: 'POST',
-      credentials: 'omit',
-      headers,
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        return { success: false, message: 'Unauthorized', shouldAuth: true };
-      }
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `Sync failed: ${response.status}`);
-    }
-
-    const result: HarvestSyncResponse = await response.json();
-    console.log('[Lumina Background] Harvest sync result:', result);
-
-    // Mark synced profiles
-    const syncedUrls = unsyncedProfiles.map((p: HarvestedProfile) => p.linkedinUrl);
-    await markAsSynced(syncedUrls);
-
-    return { success: true, data: result };
-
-  } catch (error: any) {
-    console.error('[Lumina Background] syncHarvestToServer error:', error);
-    return { success: false, message: error.message || 'Sync failed' };
   }
 }

@@ -2,64 +2,6 @@ import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { LinkedInInjector } from './LinkedInInjector';
 import { parseProfileWithRetry, waitForProfileToLoad, parseProfile } from './utils/parser';
-// import { storeInHarvestQueue } from './harvest'; // DISABLED: Feature not synced with main app yet
-
-// ============================================
-// PASSIVE HARVESTING - DISABLED
-// Feature disabled until synced with main app
-// ============================================
-
-// let lastHarvestedUrl = '';
-// let harvestDebounceTimer: number | null = null;
-
-// const isProfilePage = (): boolean => {
-//   const url = window.location.href;
-//   return /linkedin\.com\/in\/[^\/]+/.test(url);
-// };
-
-// const passiveHarvest = async () => {
-//   const currentUrl = window.location.href;
-//   if (currentUrl === lastHarvestedUrl) return;
-//   if (!isProfilePage()) return;
-//   console.log('[Lumina Harvest] Starting passive harvest for:', currentUrl);
-//   try {
-//     const isReady = await waitForProfileToLoad(3000);
-//     if (!isReady) {
-//       console.log('[Lumina Harvest] Page not ready, will retry on next navigation');
-//       return;
-//     }
-//     const profileData = parseProfile();
-//     if (profileData.firstName && profileData.firstName !== 'Unknown') {
-//       await storeInHarvestQueue(profileData);
-//       lastHarvestedUrl = currentUrl;
-//       console.log('[Lumina Harvest] ✅ Harvested:', profileData.firstName, profileData.lastName);
-//     } else {
-//       console.log('[Lumina Harvest] Skipped - no valid data parsed');
-//     }
-//   } catch (error) {
-//     console.error('[Lumina Harvest] Error:', error);
-//   }
-// };
-
-// const triggerPassiveHarvest = () => {
-//   if (harvestDebounceTimer) clearTimeout(harvestDebounceTimer);
-//   harvestDebounceTimer = window.setTimeout(() => passiveHarvest(), 2000);
-// };
-
-// let lastUrl = window.location.href;
-// const urlObserver = new MutationObserver(() => {
-//   if (window.location.href !== lastUrl) {
-//     lastUrl = window.location.href;
-//     console.log('[Lumina Harvest] URL changed to:', lastUrl);
-//     triggerPassiveHarvest();
-//   }
-// });
-
-// if (document.body) {
-//   urlObserver.observe(document.body, { childList: true, subtree: true });
-// }
-
-// triggerPassiveHarvest();
 
 // Handle TRIGGER_SCRAPE from background script (for "Check for Updates" feature)
 // This must be at the top level, NOT inside React, to ensure it's ready immediately
@@ -95,19 +37,29 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: a
 // Track the React root to avoid duplicate mounts
 let root: Root | null = null;
 let injectionContainer: HTMLElement | null = null;
+let isInjecting: boolean = false; // Guard flag to prevent race conditions
 
 const MOUNT_ID = 'lumina-extension-mount';
 
 const injectUI = () => {
-  // 1. Check if we are already injected
-  if (document.getElementById(MOUNT_ID)) {
+  // 1. Check if we are already injected OR currently injecting (race condition guard)
+  if (document.getElementById(MOUNT_ID) || isInjecting) {
     return;
   }
 
-  // 2. Inject into Body
+  // 2. Set flag immediately to block any concurrent calls
+  isInjecting = true;
+
+  // 3. Inject into Body
   const targetElement = document.body;
 
-  if (targetElement) {
+  if (!targetElement) {
+    // Reset flag if body doesn't exist yet
+    isInjecting = false;
+    return;
+  }
+
+  try {
     // Create host container
     injectionContainer = document.createElement('div');
     injectionContainer.id = MOUNT_ID;
@@ -126,17 +78,17 @@ const injectUI = () => {
 
     targetElement.appendChild(injectionContainer);
 
-    // 3. Create Shadow DOM
+    // 4. Create Shadow DOM
     const shadowRoot = injectionContainer.attachShadow({ mode: 'open' });
 
-    // 4. Inject Styles inside Shadow DOM
+    // 5. Inject Styles inside Shadow DOM
     // We use the main generated CSS file (popup.css) which contains all Tailwind utilities
     const styleLink = document.createElement('link');
     styleLink.rel = 'stylesheet';
     styleLink.href = chrome.runtime.getURL('assets/popup.css');
     shadowRoot.appendChild(styleLink);
 
-    // 5. Mount Point inside Shadow DOM
+    // 6. Mount Point inside Shadow DOM
     const mountPoint = document.createElement('div');
     mountPoint.id = 'lumina-root';
     // Reset pointer events for the app container
@@ -149,7 +101,7 @@ const injectUI = () => {
     });
     shadowRoot.appendChild(mountPoint);
 
-    // 6. Mount React
+    // 7. Mount React
     root = createRoot(mountPoint);
     root.render(
       <React.StrictMode>
@@ -158,13 +110,17 @@ const injectUI = () => {
     );
 
     console.log('[Lumina] UI Injected successfully into Shadow DOM.');
+  } catch (error) {
+    console.error('[Lumina] Error during injection:', error);
+    // Reset flag on error to allow retry
+    isInjecting = false;
   }
 };
 
 // 3. Observer to handle SPA navigation and dynamic loading
 const observer = new MutationObserver((mutations) => {
-  // Check if we are already injected
-  if (!document.getElementById(MOUNT_ID)) {
+  // Check if we are already injected or currently injecting
+  if (!document.getElementById(MOUNT_ID) && !isInjecting) {
     // Ensure body exists before injecting
     if (document.body) {
       injectUI();
@@ -172,10 +128,13 @@ const observer = new MutationObserver((mutations) => {
   }
 });
 
-observer.observe(document.body, {
-  childList: true,
-  subtree: true,
-});
+// Only start observing if document.body exists
+if (document.body) {
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+}
 
 // Initial inject - try early, with fallback
 // First attempt at 500ms for fast loading
