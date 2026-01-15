@@ -570,9 +570,14 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
         email: frontendProfile.email || '',
         phone: frontendProfile.phone || '',
         profilePictureUrl: frontendProfile.profilePictureUrl || '',
+        connectionDegree: frontendProfile.connectionDegree || '',
         experience: frontendProfile.experiences || frontendProfile.experience || [],
         education: frontendProfile.educations || frontendProfile.education || [],
         skills: frontendProfile.skills || [],
+        languages: frontendProfile.languages || [],
+        certifications: frontendProfile.certifications || [],
+        courses: frontendProfile.courses || [],
+        organizations: frontendProfile.organizations || [],
         // Include the user ID who imported this profile
         ...(importedByUserId && { importedByUserId })
       },
