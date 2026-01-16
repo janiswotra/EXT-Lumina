@@ -964,22 +964,49 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
   }
 
   // Profile Picture - find the actual profile photo (not background, not meta tag)
-  // Meta tags can show wrong user, so search DOM first
+  // CRITICAL: Sales Navigator has MULTIPLE profile pictures:
+  // - Logged-in user's picture in header
+  // - Lead's profile picture in the main profile area
+  // We need to select the LEAD's picture, not the logged-in user's picture
   let profilePictureUrl = '';
 
-  // Look for profile-displayphoto in img src (actual profile photos)
-  const allImgs = document.querySelectorAll('img');
-  for (const img of allImgs) {
-    const src = (img as HTMLImageElement).src || '';
-    // profile-displayphoto is the actual profile picture, not displaybackgroundimage
-    if (src.includes('profile-displayphoto') && !src.includes('ghost') &&
-      (img as HTMLImageElement).width >= 50) {
-      profilePictureUrl = src;
-      break;
+  // Strategy 1: Look for image with alt text matching the lead's name
+  if (fullName) {
+    const namePattern = new RegExp(fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const allImgs = document.querySelectorAll('img');
+    for (const img of allImgs) {
+      const alt = (img as HTMLImageElement).alt || '';
+      const src = (img as HTMLImageElement).src || '';
+      // Check if alt text contains the lead's name AND it's a profile photo
+      if (namePattern.test(alt) && src.includes('profile-displayphoto') &&
+        !src.includes('ghost') && (img as HTMLImageElement).width >= 50) {
+        profilePictureUrl = src;
+        break;
+      }
     }
   }
 
-  // Fallback: other profile picture selectors
+  // Strategy 2: Look for profile photo in the main profile area (not in header navigation)
+  if (!profilePictureUrl) {
+    const allImgs = document.querySelectorAll('img');
+    for (const img of allImgs) {
+      const src = (img as HTMLImageElement).src || '';
+      const alt = (img as HTMLImageElement).alt || '';
+
+      // Skip if it's in the header/navigation (logged-in user's picture)
+      const isInHeader = img.closest('header, nav, [class*="global-nav"], [class*="eah-header"]');
+
+      // profile-displayphoto is the actual profile picture, not displaybackgroundimage
+      if (src.includes('profile-displayphoto') && !src.includes('ghost') &&
+        (img as HTMLImageElement).width >= 50 && !isInHeader &&
+        !alt.toLowerCase().includes('your profile')) {
+        profilePictureUrl = src;
+        break;
+      }
+    }
+  }
+
+  // Fallback: other profile picture selectors (avoid user's header picture)
   if (!profilePictureUrl) {
     const imgSelectors = [
       'img[alt*="profile picture" i]',
@@ -988,8 +1015,10 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     ];
     for (const selector of imgSelectors) {
       const img = document.querySelector(selector) as HTMLImageElement;
+      const isInHeader = img?.closest('header, nav, [class*="global-nav"], [class*="eah-header"]');
+
       if (img?.src && img.src.startsWith('http') && !img.src.includes('ghost') &&
-        !img.src.includes('displaybackgroundimage')) {
+        !img.src.includes('displaybackgroundimage') && !isInHeader) {
         profilePictureUrl = img.src;
         break;
       }
@@ -1091,6 +1120,50 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
 
   // --- 3. Experience ---
   const experiences: Experience[] = [];
+
+  // STRATEGY A: Try to get current role from "Current role" section first (most accurate)
+  const currentRoleHeading = Array.from(document.querySelectorAll('*')).find(el =>
+    el.textContent?.trim() === 'Current role'
+  );
+
+  if (currentRoleHeading) {
+    const roleSection = currentRoleHeading.closest('section') || currentRoleHeading.parentElement?.parentElement;
+    const roleText = roleSection?.querySelector('p[class*="_current-role-item_"], p[class*="_headingText_"]');
+
+    if (roleText) {
+      const fullRoleText = roleText.textContent?.trim();
+      // Pattern: "Title at Company" or just "Title"
+      if (fullRoleText && fullRoleText.includes(' at ')) {
+        const parts = fullRoleText.split(' at ');
+        const title = parts[0].trim();
+        const company = parts[1].trim();
+
+        // Get dates from the same section
+        const dateElement = roleSection?.querySelector('span, p');
+        let startDate = '';
+        let endDate = '';
+        if (dateElement) {
+          const dateText = dateElement.textContent?.trim();
+          if (dateText && dateText.match(/\d{4}/)) {
+            const dates = parseDateRange(dateText);
+            startDate = dates.startDate;
+            endDate = dates.endDate;
+          }
+        }
+
+        experiences.push({
+          title,
+          company,
+          startDate,
+          endDate,
+          location: location, // Use the location from header
+          description: ''
+        });
+      }
+    }
+  }
+
+  // STRATEGY B: Parse from Experience section (may have additional roles)
   const expHeading = Array.from(document.querySelectorAll('h2')).find(h =>
     h.textContent?.toLowerCase().includes('experience') && !h.textContent?.includes('Shared')
   );
@@ -1101,31 +1174,80 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     const expList = expSection?.querySelector('ul, ol');
     const expItems = expList?.querySelectorAll(':scope > li[class*="_experience"], :scope > li');
 
-    expItems?.forEach(item => {
-      // Job title: h2 with _bodyText_ and _weightBold_ (excluding AI summary headings)
+    expItems?.forEach((item, index) => {
+      // CRITICAL: In Sales Navigator, the h2 in experience items contains the COMPANY name, NOT the job title!
+      // The job title is in a p[class*="_headingText_"] or can be parsed from spans
       let title = '';
-      const headings = item.querySelectorAll('h2[class*="_bodyText_"]');
-      for (const h of headings) {
-        const text = h.textContent?.trim();
-        if (text && !text.includes('How') && !text.includes('money') && !text.includes('Account') && text.length < 100) {
-          title = text;
+
+      // Try to find title from p[class*="_headingText_"] elements
+      const titleParagraphs = item.querySelectorAll('p[class*="_headingText_"], p[class*="_current-role-item_"]');
+      for (const p of titleParagraphs) {
+        const text = p.textContent?.trim();
+        if (text && text.includes(' at ')) {
+          // Parse "Title at Company" pattern
+          const parts = text.split(' at ');
+          title = parts[0].trim();
           break;
         }
       }
 
-      // Company: link with mercado class or /sales/company/ href
-      // Note: May have multiple company links - find one with actual text
+      // Fallback: If we already have this role from "Current role" section, skip it
+      if (index === 0 && experiences.length > 0 && !title) {
+        return; // Skip first item if we already got it from Current role section
+      }
+
+      // If still no title, try h2 but be aware it might be company name
+      if (!title) {
+        const headings = item.querySelectorAll('h2[class*="_bodyText_"]');
+        for (const h of headings) {
+          const text = h.textContent?.trim();
+          // Skip if it's obviously a company name (will be caught by company link check)
+          if (text && !text.includes('How') && !text.includes('money') && !text.includes('Account') && text.length < 100) {
+            title = text;
+            break;
+          }
+        }
+      }
+
+      // Company: Try multiple strategies
       let company = '';
+
+      // Strategy 1: Company link with mercado class or /sales/company/ href
       const companyLinks = item.querySelectorAll('a[href*="/sales/company/"], a[href*="/company/"], a[class*="link--mercado"]');
       for (const link of companyLinks) {
         const linkText = link.textContent?.trim();
-        if (linkText && linkText.length > 0 && linkText.length < 100) {
+        // Skip empty links and generic text
+        if (linkText && linkText.length > 0 && linkText.length < 100 &&
+          !linkText.includes('Strategic') && !linkText.includes('Business') &&
+          !linkText.includes('Competitive') && !linkText.includes('Headcount') &&
+          !linkText.includes('View Relationship')) {
           company = linkText;
           break;
         }
       }
 
-      // Fallback: If no company link found, try to extract from spans
+      // Strategy 2: In Sales Navigator, h2 often contains the company name (not the title!)
+      // Check if the h2 text matches a company link text - if so, it's the company
+      if (!company) {
+        const headings = item.querySelectorAll('h2[class*="_bodyText_"]');
+        for (const h of headings) {
+          const h2Text = h.textContent?.trim();
+          // If this h2 text matches a company link, use it as company
+          const matchingLink = Array.from(companyLinks).find(link =>
+            link.textContent?.trim() === h2Text
+          );
+          if (matchingLink && h2Text && h2Text.length > 0 && h2Text.length < 100) {
+            company = h2Text;
+            // Clear title if we mistakenly set it to company name
+            if (title === company) {
+              title = '';
+            }
+            break;
+          }
+        }
+      }
+
+      // Strategy 3: Fallback - extract from spans
       // Company is usually the second line after the title in Sales Navigator
       if (!company) {
         const allSpans = Array.from(item.querySelectorAll('span')).map(s => s.textContent?.trim() || '').filter(t => t.length > 0);
