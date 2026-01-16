@@ -450,7 +450,7 @@ export const parseProfile = (): CandidateProfile => {
           const workLocationTypes = ['on-site', 'remote', 'hybrid'];
 
           // --- NEW: Detect company-first structure ---
-          // Pattern: Line 0 = Company, Line 1 = "Full-time · X yrs", Line 2 = Title
+          // Pattern: Line 0 = Company, Line 1 = "Full-time · X yrs" OR Title, Line 2 = Title OR Dates
           const line0 = uniqueLines[0];
           const line1 = uniqueLines[1] || '';
           const line2 = uniqueLines[2] || '';
@@ -460,11 +460,28 @@ export const parseProfile = (): CandidateProfile => {
                                   line1.includes(' yr') ||
                                   line1.includes(' mo');
 
+          // Helper to detect if a line looks like a job title (contains common title words or parentheticals)
+          const looksLikeJobTitle = (text: string): boolean => {
+            if (!text) return false;
+            const titleKeywords = ['analyst', 'manager', 'director', 'engineer', 'developer', 'designer',
+                                   'consultant', 'specialist', 'coordinator', 'associate', 'partner',
+                                   'executive', 'officer', 'lead', 'head', 'senior', 'junior', 'intern'];
+            const lower = text.toLowerCase();
+            return titleKeywords.some(kw => lower.includes(kw)) || text.includes('(') && text.includes(')');
+          };
+
           // Check if this is company-first structure
+          // Case 1: Line 0 = Company, Line 1 = Metadata, Line 2 = Title
           if (!line0.includes(' at ') && isLine1Metadata && line2 && uniqueLines.length >= 3) {
-            // Company-first pattern detected
             company = line0.trim();
             title = line2.trim();
+          }
+          // Case 2: Line 0 = Company, Line 1 = Title (no metadata), Line 2 = Dates
+          else if (!line0.includes(' at ') && !isLine1Metadata &&
+                   looksLikeJobTitle(line1) && !looksLikeJobTitle(line0) &&
+                   line2 && (/\d{4}/.test(line2) || line2.toLowerCase().includes('present'))) {
+            company = line0.trim();
+            title = line1.trim();
           } else {
             // Original pattern: "Title at Company" or title-first
             title = line0;
@@ -561,8 +578,37 @@ export const parseProfile = (): CandidateProfile => {
     });
   }
 
-  const currentExp = experiences.find(e => e.endDate?.toLowerCase() === 'present');
-  const currentCompany = currentExp ? currentExp.company : (experiences.length > 0 ? experiences[0].company : '');
+  // Find current company: If multiple roles have "Present", pick the most recent one (latest startDate)
+  const currentRoles = experiences.filter(e => e.endDate?.toLowerCase() === 'present');
+  let currentExp = null;
+
+  if (currentRoles.length > 0) {
+    // Sort by startDate descending to get most recent
+    currentExp = currentRoles.sort((a, b) => {
+      // Parse dates for comparison (handle formats like "Sep 2023", "2023-09", "2023")
+      const parseDate = (dateStr: string): number => {
+        if (!dateStr) return 0;
+        // Try to extract year
+        const yearMatch = dateStr.match(/(\d{4})/);
+        if (!yearMatch) return 0;
+        const year = parseInt(yearMatch[1]);
+
+        // Try to extract month
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        const monthMatch = dateStr.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+        const month = monthMatch ? monthNames.indexOf(monthMatch[1]) + 1 : 1;
+
+        return year * 100 + month; // e.g., 202309 for Sep 2023
+      };
+
+      return parseDate(b.startDate || '') - parseDate(a.startDate || ''); // Descending
+    })[0];
+  } else if (experiences.length > 0) {
+    // Fallback: If no "Present" roles, use first experience
+    currentExp = experiences[0];
+  }
+
+  const currentCompany = currentExp ? currentExp.company : '';
 
   // --- 4. Education ---
   const educations: Education[] = [];
@@ -1178,16 +1224,34 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
       // CRITICAL: In Sales Navigator, the h2 in experience items contains the COMPANY name, NOT the job title!
       // The job title is in a p[class*="_headingText_"] or can be parsed from spans
       let title = '';
+      let company = '';
 
-      // Try to find title from p[class*="_headingText_"] elements
-      const titleParagraphs = item.querySelectorAll('p[class*="_headingText_"], p[class*="_current-role-item_"]');
+      // Try to find title AND company from p[class*="_headingText_"] elements or h2
+      const titleParagraphs = item.querySelectorAll('p[class*="_headingText_"], p[class*="_current-role-item_"], h2[class*="_bodyText_"]');
+
       for (const p of titleParagraphs) {
         const text = p.textContent?.trim();
-        if (text && text.includes(' at ')) {
-          // Parse "Title at Company" pattern
+        if (!text || text.length > 200) continue;
+
+        // Skip AI-generated content and meta text
+        if (text.includes('How') && text.includes('money')) continue;
+        if (text.includes('Account')) continue;
+        if (text.includes('Summarized')) continue;
+
+        // Pattern 1: "Title at Company" - extract BOTH title and company
+        if (text.includes(' at ')) {
           const parts = text.split(' at ');
           title = parts[0].trim();
+          company = parts[1].trim();
           break;
+        }
+
+        // Pattern 2: Just the title without " at " (e.g., "Senior Management Consultant, Managing Director")
+        // This is common in Sales Navigator for older roles
+        // We'll use this, but verify it's not a company name later
+        if (!title && text.length > 5 && text.length < 150) {
+          title = text;
+          // Don't break - keep looking for " at " pattern which is more reliable
         }
       }
 
@@ -1196,33 +1260,21 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
         return; // Skip first item if we already got it from Current role section
       }
 
-      // If still no title, try h2 but be aware it might be company name
-      if (!title) {
-        const headings = item.querySelectorAll('h2[class*="_bodyText_"]');
-        for (const h of headings) {
-          const text = h.textContent?.trim();
-          // Skip if it's obviously a company name (will be caught by company link check)
-          if (text && !text.includes('How') && !text.includes('money') && !text.includes('Account') && text.length < 100) {
-            title = text;
-            break;
-          }
-        }
-      }
-
-      // Company: Try multiple strategies
-      let company = '';
+      // Company: Try multiple strategies if not already extracted from " at " pattern
 
       // Strategy 1: Company link with mercado class or /sales/company/ href
       const companyLinks = item.querySelectorAll('a[href*="/sales/company/"], a[href*="/company/"], a[class*="link--mercado"]');
-      for (const link of companyLinks) {
-        const linkText = link.textContent?.trim();
-        // Skip empty links and generic text
-        if (linkText && linkText.length > 0 && linkText.length < 100 &&
-          !linkText.includes('Strategic') && !linkText.includes('Business') &&
-          !linkText.includes('Competitive') && !linkText.includes('Headcount') &&
-          !linkText.includes('View Relationship')) {
-          company = linkText;
-          break;
+      if (!company) {
+        for (const link of companyLinks) {
+          const linkText = link.textContent?.trim();
+          // Skip empty links and generic text
+          if (linkText && linkText.length > 0 && linkText.length < 100 &&
+            !linkText.includes('Strategic') && !linkText.includes('Business') &&
+            !linkText.includes('Competitive') && !linkText.includes('Headcount') &&
+            !linkText.includes('View Relationship')) {
+            company = linkText;
+            break;
+          }
         }
       }
 
@@ -1319,8 +1371,37 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     });
   }
 
-  const currentExp = experiences.find(e => e.endDate?.toLowerCase() === 'present');
-  const currentCompany = currentExp ? currentExp.company : (experiences.length > 0 ? experiences[0].company : '');
+  // Find current company: If multiple roles have "Present", pick the most recent one (latest startDate)
+  const currentRoles = experiences.filter(e => e.endDate?.toLowerCase() === 'present');
+  let currentExp = null;
+
+  if (currentRoles.length > 0) {
+    // Sort by startDate descending to get most recent
+    currentExp = currentRoles.sort((a, b) => {
+      // Parse dates for comparison (handle formats like "Sep 2023", "2023-09", "2023")
+      const parseDate = (dateStr: string): number => {
+        if (!dateStr) return 0;
+        // Try to extract year
+        const yearMatch = dateStr.match(/(\d{4})/);
+        if (!yearMatch) return 0;
+        const year = parseInt(yearMatch[1]);
+
+        // Try to extract month
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        const monthMatch = dateStr.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+        const month = monthMatch ? monthNames.indexOf(monthMatch[1]) + 1 : 1;
+
+        return year * 100 + month; // e.g., 202309 for Sep 2023
+      };
+
+      return parseDate(b.startDate || '') - parseDate(a.startDate || ''); // Descending
+    })[0];
+  } else if (experiences.length > 0) {
+    // Fallback: If no "Present" roles, use first experience
+    currentExp = experiences[0];
+  }
+
+  const currentCompany = currentExp ? currentExp.company : '';
 
   // --- 4. Education ---
   const educations: Education[] = [];
