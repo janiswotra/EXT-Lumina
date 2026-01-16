@@ -449,66 +449,103 @@ export const parseProfile = (): CandidateProfile => {
           const employmentTypes = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
           const workLocationTypes = ['on-site', 'remote', 'hybrid'];
 
-          // --- NEW: Detect company-first structure ---
-          // Pattern: Line 0 = Company, Line 1 = "Full-time · X yrs" OR Title, Line 2 = Title OR Dates
+          // --- STRUCTURE DETECTION ---
+          // LinkedIn has multiple DOM structures that we need to detect correctly:
+          //
+          // TITLE-FIRST PATTERNS:
+          // A) "Title at Company" in line0 → split on " at "
+          // B) Line0=Title, Line1="Company · Employment", Line2=Dates
+          //
+          // COMPANY-FIRST PATTERNS:
+          // C) Line0=Company, Line1="Employment · Duration", Line2=Title
+          // D) Line0=Company, Line1=Title, Line2=Dates
+
           const line0 = uniqueLines[0];
           const line1 = uniqueLines[1] || '';
           const line2 = uniqueLines[2] || '';
 
           const line1Lower = line1.toLowerCase();
-          const isLine1Metadata = employmentTypes.some(type => line1Lower.includes(type)) ||
-                                  line1.includes(' yr') ||
-                                  line1.includes(' mo');
+
+          // Check if line1 STARTS with employment type (pure metadata like "Full-time · 9 yrs")
+          // vs CONTAINS it after company name ("Carlsquare · Full-time")
+          const line1StartsWithMetadata = employmentTypes.some(type =>
+            line1Lower.startsWith(type) || line1Lower.startsWith(type + ' ')
+          );
+
+          // Check if line1 contains metadata but ALSO has company name before it
+          const line1HasCompanyWithMetadata = !line1StartsWithMetadata &&
+            line1.includes('·') &&
+            employmentTypes.some(type => line1Lower.includes(type));
 
           // Helper to detect if a line looks like a job title (contains common title words or parentheticals)
           const looksLikeJobTitle = (text: string): boolean => {
             if (!text) return false;
             const titleKeywords = ['analyst', 'manager', 'director', 'engineer', 'developer', 'designer',
                                    'consultant', 'specialist', 'coordinator', 'associate', 'partner',
-                                   'executive', 'officer', 'lead', 'head', 'senior', 'junior', 'intern'];
+                                   'executive', 'officer', 'lead', 'head', 'senior', 'junior', 'intern',
+                                   'advisor', 'president', 'founder', 'ceo', 'cto', 'cfo', 'vp', 'chief'];
             const lower = text.toLowerCase();
-            return titleKeywords.some(kw => lower.includes(kw)) || text.includes('(') && text.includes(')');
+            return titleKeywords.some(kw => lower.includes(kw)) || (text.includes('(') && text.includes(')'));
           };
 
-          // Check if this is company-first structure
-          // Case 1: Line 0 = Company, Line 1 = Metadata, Line 2 = Title
-          if (!line0.includes(' at ') && isLine1Metadata && line2 && uniqueLines.length >= 3) {
+          // CASE A: "Title at Company" pattern in line0
+          if (line0.includes(' at ')) {
+            const parts = line0.split(' at ');
+            if (parts.length === 2) {
+              title = parts[0].trim();
+              company = parts[1].trim();
+            }
+          }
+          // CASE B: Title-first with "Company · Employment" in line1
+          // Detected by: line0 looks like job title OR line1 has company with metadata
+          else if ((looksLikeJobTitle(line0) || line1HasCompanyWithMetadata) && line1) {
+            title = line0.trim();
+            // Extract company from line1 (before the "·" if present)
+            if (line1.includes('·')) {
+              company = line1.split('·')[0].trim();
+            } else {
+              company = line1.trim();
+            }
+          }
+          // CASE C: Company-first with pure metadata in line1 ("Full-time · 9 yrs")
+          else if (!looksLikeJobTitle(line0) && line1StartsWithMetadata && line2 && uniqueLines.length >= 3) {
             company = line0.trim();
             title = line2.trim();
           }
-          // Case 2: Line 0 = Company, Line 1 = Title (no metadata), Line 2 = Dates
-          else if (!line0.includes(' at ') && !isLine1Metadata &&
-                   looksLikeJobTitle(line1) && !looksLikeJobTitle(line0) &&
+          // CASE D: Company-first with title in line1 (no metadata)
+          else if (!looksLikeJobTitle(line0) && looksLikeJobTitle(line1) &&
                    line2 && (/\d{4}/.test(line2) || line2.toLowerCase().includes('present'))) {
             company = line0.trim();
             title = line1.trim();
           } else {
-            // Original pattern: "Title at Company" or title-first
+            // FALLBACK: Assume title-first if none of the above patterns matched
             title = line0;
 
-            // Extract company from title if it contains " at " (e.g., "Partner (M&A) at MCF Corporate Finance")
-            if (title.includes(' at ')) {
-              const parts = title.split(' at ');
-              if (parts.length === 2) {
-                title = parts[0].trim();
-                company = parts[1].trim();
-              }
-            }
+            // If company not found, look for it in subsequent lines
+            if (!company && line1) {
+              // Check if line1 has "Company · Employment" format
+              if (line1.includes('·')) {
+                const beforeDot = line1.split('·')[0].trim();
+                const afterDot = line1.split('·').slice(1).join('·').toLowerCase();
+                // Only use if what's before · is not an employment type
+                if (!employmentTypes.some(t => beforeDot.toLowerCase() === t)) {
+                  company = beforeDot;
+                }
+              } else {
+                // Filter out pure employment types and location types
+                const filteredLines = uniqueLines.slice(1).filter(line => {
+                  const lower = line.toLowerCase();
+                  return !employmentTypes.includes(lower) &&
+                         !workLocationTypes.includes(lower) &&
+                         !line.includes(' yr') &&
+                         !line.includes(' mo') &&
+                         !/^\d{4}/.test(line); // Skip lines starting with year
+                });
 
-            // If company not found in title, look for it in subsequent lines
-            if (!company) {
-              // Filter out employment types and location types
-              const filteredLines = uniqueLines.slice(1).filter(line => {
-                const lower = line.toLowerCase();
-                return !employmentTypes.includes(lower) &&
-                       !workLocationTypes.includes(lower) &&
-                       !line.includes(' yr') &&
-                       !line.includes(' mo');
-              });
-
-              // First filtered line should be the company (before dates)
-              if (filteredLines.length > 0) {
-                company = filteredLines[0];
+                // First filtered line should be the company (before dates)
+                if (filteredLines.length > 0) {
+                  company = filteredLines[0];
+                }
               }
             }
           }
