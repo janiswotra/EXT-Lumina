@@ -438,7 +438,7 @@ export const parseProfile = (): CandidateProfile => {
         const uniqueLines = [...new Set(visualLines)];
 
         if (uniqueLines.length >= 2) {
-          let title = uniqueLines[0];
+          let title = '';
           let company = '';
           let startDate = '';
           let endDate = '';
@@ -449,29 +449,50 @@ export const parseProfile = (): CandidateProfile => {
           const employmentTypes = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
           const workLocationTypes = ['on-site', 'remote', 'hybrid'];
 
-          // Extract company from title if it contains " at " (e.g., "Partner (M&A) at MCF Corporate Finance")
-          if (title.includes(' at ')) {
-            const parts = title.split(' at ');
-            if (parts.length === 2) {
-              title = parts[0].trim();
-              company = parts[1].trim();
+          // --- NEW: Detect company-first structure ---
+          // Pattern: Line 0 = Company, Line 1 = "Full-time · X yrs", Line 2 = Title
+          const line0 = uniqueLines[0];
+          const line1 = uniqueLines[1] || '';
+          const line2 = uniqueLines[2] || '';
+
+          const line1Lower = line1.toLowerCase();
+          const isLine1Metadata = employmentTypes.some(type => line1Lower.includes(type)) ||
+                                  line1.includes(' yr') ||
+                                  line1.includes(' mo');
+
+          // Check if this is company-first structure
+          if (!line0.includes(' at ') && isLine1Metadata && line2 && uniqueLines.length >= 3) {
+            // Company-first pattern detected
+            company = line0.trim();
+            title = line2.trim();
+          } else {
+            // Original pattern: "Title at Company" or title-first
+            title = line0;
+
+            // Extract company from title if it contains " at " (e.g., "Partner (M&A) at MCF Corporate Finance")
+            if (title.includes(' at ')) {
+              const parts = title.split(' at ');
+              if (parts.length === 2) {
+                title = parts[0].trim();
+                company = parts[1].trim();
+              }
             }
-          }
 
-          // If company not found in title, look for it in subsequent lines
-          if (!company) {
-            // Filter out employment types and location types
-            const filteredLines = uniqueLines.slice(1).filter(line => {
-              const lower = line.toLowerCase();
-              return !employmentTypes.includes(lower) &&
-                     !workLocationTypes.includes(lower) &&
-                     !line.includes(' yr') &&
-                     !line.includes(' mo');
-            });
+            // If company not found in title, look for it in subsequent lines
+            if (!company) {
+              // Filter out employment types and location types
+              const filteredLines = uniqueLines.slice(1).filter(line => {
+                const lower = line.toLowerCase();
+                return !employmentTypes.includes(lower) &&
+                       !workLocationTypes.includes(lower) &&
+                       !line.includes(' yr') &&
+                       !line.includes(' mo');
+              });
 
-            // First filtered line should be the company (before dates)
-            if (filteredLines.length > 0) {
-              company = filteredLines[0];
+              // First filtered line should be the company (before dates)
+              if (filteredLines.length > 0) {
+                company = filteredLines[0];
+              }
             }
           }
 
