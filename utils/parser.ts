@@ -952,43 +952,71 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
   console.log('[Lumina Parser] Sales Navigator name detected:', fullName, '| firstName:', firstName, '| lastName:', lastName);
 
   // Headline: Find the job description text (usually contains @ or | for job titles)
+  // CRITICAL: Only search within header area to avoid picking up content from Interests section
   let headline = '';
 
-  // Strategy 1: Look for headline in subhead div class
+  // Find the main profile header section (excludes Interests, Education, Experience)
+  const profileHeader = document.querySelector('[class*="_profile-card_"], [class*="_header_"], [class*="_topcard_"]');
+
+  // Helper to check if element is in a safe area (not Interests, not other person's profile)
+  const isInSafeArea = (el: Element): boolean => {
+    const parent = el.closest('section, [class*="_interests_"], [class*="_education_"], [class*="_experience_"]');
+    if (parent) {
+      const headings = parent.querySelectorAll('h2');
+      for (const h of headings) {
+        const txt = h.textContent?.toLowerCase() || '';
+        if (txt.includes('interests') || txt.includes('education') || txt.includes('experience')) {
+          return false;
+        }
+      }
+    }
+    // Also exclude if it's inside an anchor (could be someone else's profile link)
+    if (el.closest('a[href*="/lead/"]') || el.closest('a[href*="/in/"]')) {
+      return false;
+    }
+    return true;
+  };
+
+  // Strategy 1: Look for headline in subhead div class (most reliable)
   const subheadEl = document.querySelector('div[class*="_subhead_"]');
-  if (subheadEl) {
+  if (subheadEl && isInSafeArea(subheadEl)) {
     const text = subheadEl.textContent?.trim();
-    if (text && text.length > 20 && text.length < 300) {
+    if (text && text.length > 5 && text.length < 200) {
       headline = text.replace(/\s+/g, ' ').trim();
     }
   }
 
-  // Strategy 2: Look for paragraphs with @ symbol (job titles usually have Company @ Location pattern)
-  if (!headline) {
-    const paragraphs = document.querySelectorAll('p[class*="_bodyText_"], div[class*="_bodyText_"]');
+  // Strategy 2: Look within header area ONLY for bodyText paragraphs
+  if (!headline && profileHeader) {
+    const paragraphs = profileHeader.querySelectorAll('p[class*="_bodyText_"], div[class*="_bodyText_"]');
     for (const p of paragraphs) {
+      if (!isInSafeArea(p)) continue;
       const text = p.textContent?.trim();
-      // Look for job-description-like text with @ or | patterns
-      if (text && text.length > 20 && text.length < 300 &&
-        (text.includes('@') || text.includes('|') || text.includes('Engineer') || text.includes('Developer')) &&
+      if (text && text.length > 5 && text.length < 200 &&
         !text.includes('Message') && !text.includes('connection') &&
-        !text.includes('warm introduction') && !text.includes('Show more')) {
+        !text.includes('warm introduction') && !text.includes('Show more') &&
+        !text.includes('followers')) {
         headline = text.replace(/\s+/g, ' ').trim();
         break;
       }
     }
   }
 
-  // Strategy 3: Fallback - just look for any substantial bodyText
+  // Strategy 3: Fallback - look for job title near the name (within first 500px equivalent)
   if (!headline) {
-    const paragraphs = document.querySelectorAll('p[class*="_bodyText_"]');
-    for (const p of paragraphs) {
-      const text = p.textContent?.trim();
-      if (text && text.length > 30 && text.length < 300 &&
-        !text.includes('Message') && !text.includes('connection') &&
-        !text.includes('introduction') && !text.includes('Show more')) {
-        headline = text.replace(/\s+/g, ' ').trim();
-        break;
+    // Look for the title text that appears right below the name
+    const nameEl = document.querySelector('span[class*="_name_"], h1[class*="_name_"]');
+    if (nameEl) {
+      const parent = nameEl.closest('div');
+      if (parent) {
+        const sibling = parent.nextElementSibling;
+        if (sibling) {
+          const text = sibling.textContent?.trim();
+          if (text && text.length > 5 && text.length < 150 &&
+            !text.includes('connection') && !text.includes('Message')) {
+            headline = text.replace(/\s+/g, ' ').trim();
+          }
+        }
       }
     }
   }
