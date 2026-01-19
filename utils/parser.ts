@@ -59,21 +59,14 @@ export const waitForProfileToLoad = (timeout: number = 5000): Promise<boolean> =
       for (const selector of nameSelectors) {
         const el = document.querySelector(selector);
         if (el && el.textContent?.trim()) {
-          console.log('[Lumina Parser] Profile loaded, detected via:', selector);
           clearInterval(intervalId);
           resolve(true);
           return;
         }
       }
 
-      // Log progress every 2 seconds for debugging
       const elapsed = Date.now() - startTime;
-      if (elapsed > 0 && elapsed % 2000 < 100) {
-        console.log(`[Lumina Parser] Still waiting for profile... (${Math.round(elapsed / 1000)}s elapsed)`);
-      }
-
       if (elapsed >= timeout) {
-        console.log('[Lumina Parser] Profile load timeout after', timeout, 'ms');
         clearInterval(intervalId);
         resolve(false);
         return;
@@ -88,7 +81,6 @@ export const waitForProfileToLoad = (timeout: number = 5000): Promise<boolean> =
  * Total time: ~1 second
  */
 export const triggerLazyLoading = async (): Promise<void> => {
-  console.log('[Lumina Parser] Triggering lazy loading via scroll...');
   const scrollPositions = [300, 600, 1000, 1500, 2000, 2500, 3000];
 
   for (const pos of scrollPositions) {
@@ -99,22 +91,20 @@ export const triggerLazyLoading = async (): Promise<void> => {
   // Return to top for consistent state
   window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   await new Promise(resolve => setTimeout(resolve, 100));
-  console.log('[Lumina Parser] Lazy loading scroll complete');
 };
 
 /**
- * Attempts to parse profile with retry logic.
- * Useful when LinkedIn's DOM hasn't fully loaded.
+ * Attempts to parse profile with minimal retry logic.
+ * Optimized for speed - single attempt for user-initiated actions.
  *
- * @param maxRetries - Number of retry attempts
- * @param delayMs - Base delay between retries (250ms default)
+ * @param maxRetries - Number of retry attempts (default 1 for instant response)
+ * @param delayMs - Delay between retries if needed (default 100ms)
  * @param enableScrolling - If true, scrolls the page to trigger lazy loading.
- *                          Use ONLY for background/headless scrapes (Check for Updates).
- *                          Set to false for manual user interactions to avoid jarring UX.
+ *                          Use ONLY for background/headless scrapes.
  */
 export const parseProfileWithRetry = async (
-  maxRetries: number = 3,
-  delayMs: number = 250,
+  maxRetries: number = 1,
+  delayMs: number = 100,
   enableScrolling: boolean = false
 ): Promise<CandidateProfile> => {
   // Only trigger lazy loading if explicitly enabled (background scrapes only)
@@ -124,22 +114,20 @@ export const parseProfileWithRetry = async (
 
   let lastResult = parseProfile();
 
-  for (let i = 0; i < maxRetries; i++) {
-    // Check if we got meaningful data
-    if (lastResult.firstName && lastResult.firstName !== 'Unknown') {
-      console.log(`[Lumina Parser] Successfully parsed profile on attempt ${i + 1}`);
-      return lastResult;
-    }
-
-    // Wait before retry with exponential backoff (250->375->562ms = ~1.2s total max)
-    const waitTime = delayMs * Math.pow(1.5, i);
-    console.log(`[Lumina Parser] Retry ${i + 1}/${maxRetries} in ${waitTime}ms...`);
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-
-    lastResult = parseProfile();
+  // Return immediately if we got valid data (fast path)
+  if (lastResult.firstName && lastResult.firstName !== 'Unknown') {
+    return lastResult;
   }
 
-  console.log('[Lumina Parser] Max retries reached, returning best result');
+  // Only retry if first attempt failed and retries requested
+  for (let i = 1; i < maxRetries; i++) {
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    lastResult = parseProfile();
+    if (lastResult.firstName && lastResult.firstName !== 'Unknown') {
+      return lastResult;
+    }
+  }
+
   return lastResult;
 };
 
@@ -219,7 +207,7 @@ export const parseProfile = (): CandidateProfile => {
 
   // Detect Sales Navigator and route to specialized parser
   if (isSalesNavigator()) {
-    console.log('[Lumina Parser] Detected Sales Navigator, using specialized parser');
+    // Sales Navigator detected
     return parseSalesNavigatorProfile();
   }
 
@@ -244,6 +232,56 @@ export const parseProfile = (): CandidateProfile => {
 
   const location = getText(document, '.text-body-small.inline.t-black--light.break-words') ||
     getText(document, '.pb2 .text-body-small');
+
+  // --- Extract Current Company from Profile Header (Top Card) ---
+  // This is the reliable way - fetch company from the header area, not from experience section
+  // LinkedIn shows current company as a clickable button/link in the top card
+  let currentCompanyFromHeader = '';
+
+  // Strategy 1: Button element with company link in top card (most common 2024/2025 layout)
+  const companyButton = document.querySelector('button[aria-label*="Current company"]') as HTMLElement;
+  if (companyButton) {
+    currentCompanyFromHeader = companyButton.textContent?.trim() || '';
+  }
+
+  // Strategy 2: Link to company page in the top card section
+  if (!currentCompanyFromHeader) {
+    const topCardSection = document.querySelector('.pv-text-details__left-panel, .mt2.relative');
+    if (topCardSection) {
+      // Look for company link (usually has /company/ in href)
+      const companyLink = topCardSection.querySelector('a[href*="/company/"]') as HTMLAnchorElement;
+      if (companyLink) {
+        currentCompanyFromHeader = companyLink.textContent?.trim() || '';
+      }
+    }
+  }
+
+  // Strategy 3: Span with data attribute for experience section link in header
+  if (!currentCompanyFromHeader) {
+    const experienceLink = document.querySelector('[data-field="experience_company_logo"] + div span, button[id*="experience"] span[aria-hidden="true"]');
+    if (experienceLink) {
+      currentCompanyFromHeader = experienceLink.textContent?.trim() || '';
+    }
+  }
+
+  // Strategy 4: Direct text from top card area (second line often has company info)
+  if (!currentCompanyFromHeader) {
+    const topCardTexts = document.querySelectorAll('.pv-text-details__left-panel ul li button span[aria-hidden="true"], .mt2 ul li button span[aria-hidden="true"]');
+    for (const el of topCardTexts) {
+      const text = el.textContent?.trim() || '';
+      // Filter out obvious non-company values
+      if (text &&
+        !text.toLowerCase().includes('connection') &&
+        !text.toLowerCase().includes('follower') &&
+        !text.includes(' yr') &&
+        !text.includes(' mo') &&
+        text.length > 2 &&
+        text.length < 100) {
+        currentCompanyFromHeader = text;
+        break;
+      }
+    }
+  }
 
   // Profile Picture - Strategy 1: Open Graph Meta Tag (Most stable, public URL)
   let profilePictureUrl = '';
@@ -295,7 +333,6 @@ export const parseProfile = (): CandidateProfile => {
           !src.includes('static.licdn.com/aero-v1/sc/h/') &&
           src.startsWith('http')) {
           profilePictureUrl = src;
-          console.log('[Lumina Parser] Found profile picture:', selector);
           break;
         }
       }
@@ -313,7 +350,6 @@ export const parseProfile = (): CandidateProfile => {
   }
 
   if (!profilePictureUrl) {
-    console.log('[Lumina Parser] Could not find profile picture');
   }
 
   // --- 2. About Section ---
@@ -350,7 +386,6 @@ export const parseProfile = (): CandidateProfile => {
 
       // Use grouped parsing ONLY if we have nested items AND successfully extracted company
       if (nestedItems.length > 0 && companyFromParent) {
-        console.log('[Lumina Parser] Detected grouped company entry:', companyFromParent, 'with', nestedItems.length, 'nested positions');
 
         // Parse each nested position
         nestedItems.forEach(nestedItem => {
@@ -392,11 +427,11 @@ export const parseProfile = (): CandidateProfile => {
                 const possibleLoc = uniqueLines[dateLineIndex + 1];
                 const lower = possibleLoc.toLowerCase();
                 if (possibleLoc.length < 50 &&
-                    !possibleLoc.includes('·') &&
-                    !possibleLoc.includes(' yr') &&
-                    !possibleLoc.includes(' mo') &&
-                    !employmentTypes.includes(lower) &&
-                    !workLocationTypes.includes(lower)) {
+                  !possibleLoc.includes('·') &&
+                  !possibleLoc.includes(' yr') &&
+                  !possibleLoc.includes(' mo') &&
+                  !employmentTypes.includes(lower) &&
+                  !workLocationTypes.includes(lower)) {
                   loc = possibleLoc;
                 }
               }
@@ -481,9 +516,9 @@ export const parseProfile = (): CandidateProfile => {
           const looksLikeJobTitle = (text: string): boolean => {
             if (!text) return false;
             const titleKeywords = ['analyst', 'manager', 'director', 'engineer', 'developer', 'designer',
-                                   'consultant', 'specialist', 'coordinator', 'associate', 'partner',
-                                   'executive', 'officer', 'lead', 'head', 'senior', 'junior', 'intern',
-                                   'advisor', 'president', 'founder', 'ceo', 'cto', 'cfo', 'vp', 'chief'];
+              'consultant', 'specialist', 'coordinator', 'associate', 'partner',
+              'executive', 'officer', 'lead', 'head', 'senior', 'junior', 'intern',
+              'advisor', 'president', 'founder', 'ceo', 'cto', 'cfo', 'vp', 'chief'];
             const lower = text.toLowerCase();
             return titleKeywords.some(kw => lower.includes(kw)) || (text.includes('(') && text.includes(')'));
           };
@@ -514,7 +549,7 @@ export const parseProfile = (): CandidateProfile => {
           }
           // CASE D: Company-first with title in line1 (no metadata)
           else if (!looksLikeJobTitle(line0) && looksLikeJobTitle(line1) &&
-                   line2 && (/\d{4}/.test(line2) || line2.toLowerCase().includes('present'))) {
+            line2 && (/\d{4}/.test(line2) || line2.toLowerCase().includes('present'))) {
             company = line0.trim();
             title = line1.trim();
           } else {
@@ -536,10 +571,10 @@ export const parseProfile = (): CandidateProfile => {
                 const filteredLines = uniqueLines.slice(1).filter(line => {
                   const lower = line.toLowerCase();
                   return !employmentTypes.includes(lower) &&
-                         !workLocationTypes.includes(lower) &&
-                         !line.includes(' yr') &&
-                         !line.includes(' mo') &&
-                         !/^\d{4}/.test(line); // Skip lines starting with year
+                    !workLocationTypes.includes(lower) &&
+                    !line.includes(' yr') &&
+                    !line.includes(' mo') &&
+                    !/^\d{4}/.test(line); // Skip lines starting with year
                 });
 
                 // First filtered line should be the company (before dates)
@@ -563,9 +598,9 @@ export const parseProfile = (): CandidateProfile => {
               const candidateCompany = uniqueLines[dateLineIndex - 1];
               const lower = candidateCompany.toLowerCase();
               if (!employmentTypes.includes(lower) &&
-                  !workLocationTypes.includes(lower) &&
-                  !candidateCompany.includes(' yr') &&
-                  !candidateCompany.includes(' mo')) {
+                !workLocationTypes.includes(lower) &&
+                !candidateCompany.includes(' yr') &&
+                !candidateCompany.includes(' mo')) {
                 company = candidateCompany;
               }
             }
@@ -576,9 +611,9 @@ export const parseProfile = (): CandidateProfile => {
               const lower = possibleLoc.toLowerCase();
               // Location should not be employment type or work location type
               if (possibleLoc.length < 50 &&
-                  !possibleLoc.includes('·') &&
-                  !employmentTypes.includes(lower) &&
-                  !workLocationTypes.includes(lower)) {
+                !possibleLoc.includes('·') &&
+                !employmentTypes.includes(lower) &&
+                !workLocationTypes.includes(lower)) {
                 loc = possibleLoc;
               }
             }
@@ -645,7 +680,10 @@ export const parseProfile = (): CandidateProfile => {
     currentExp = experiences[0];
   }
 
-  const currentCompany = currentExp ? currentExp.company : '';
+  // PRIMARY: Use company from header (reliable, like Attio approach)
+  // FALLBACK: Only use experience section if header extraction failed
+  const currentCompanyFromExperience = currentExp ? currentExp.company : '';
+  const currentCompany = currentCompanyFromHeader || currentCompanyFromExperience;
 
   // --- 4. Education ---
   const educations: Education[] = [];
@@ -812,7 +850,6 @@ export const parseProfile = (): CandidateProfile => {
  */
 export const parseSalesNavigatorProfile = (): CandidateProfile => {
   const url = window.location.href;
-  console.log('[Lumina Parser] Parsing Sales Navigator profile...');
 
   // --- 1. Basic Info ---
   // Find the header element first (contains name, headline, location)
@@ -949,7 +986,6 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     lastName = parts.slice(1).join(' ');
   }
 
-  console.log('[Lumina Parser] Sales Navigator name detected:', fullName, '| firstName:', firstName, '| lastName:', lastName);
 
   // Headline: Find the job description text (usually contains @ or | for job titles)
   // CRITICAL: Only search within header area to avoid picking up content from Interests section
@@ -1204,7 +1240,6 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     }
   }
 
-  console.log('[Lumina Parser] Contact info found:', { phone: phone ? 'Yes' : 'No', email: email ? 'Yes' : 'No' });
 
   // --- 2. About Section ---
   let about = '';
@@ -1626,7 +1661,6 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
       // If we found a school OR we have meaningful education data, add it
       if (school || (degree && degree.length > 2)) {
         educations.push({ school: school || '', degree, field, endDate });
-        console.log('[Lumina Parser] Education parsed:', { school, degree, field, endDate });
       }
     });
   }
@@ -1732,7 +1766,6 @@ export const parseSalesNavigatorProfile = (): CandidateProfile => {
     });
   }
 
-  console.log('[Lumina Parser] Sales Navigator profile parsed:', { firstName, lastName, experiences: experiences.length, educations: educations.length, hasPhone: !!phone, hasEmail: !!email });
 
   // --- 7. Connection Degree ---
   const connectionDegree = getConnectionDegree();
@@ -1844,7 +1877,6 @@ const waitForElement = (selector: string, timeout: number = 3000): Promise<Eleme
  * Only works for 1st degree connections.
  */
 export const scrapeContactInfo = async (): Promise<{ email?: string; phone?: string }> => {
-  console.log('[Lumina Parser] Attempting to scrape contact info...');
 
   const styleId = 'lumina-hide-modal';
   if (!document.getElementById(styleId)) {
@@ -1871,7 +1903,6 @@ export const scrapeContactInfo = async (): Promise<{ email?: string; phone?: str
     ) as HTMLAnchorElement;
 
   if (!contactLink) {
-    console.log('[Lumina Parser] Contact info link not found');
     document.getElementById(styleId)?.remove();
     return {};
   }
@@ -1881,7 +1912,6 @@ export const scrapeContactInfo = async (): Promise<{ email?: string; phone?: str
   const modal = await waitForElement('.artdeco-modal, section.pv-contact-info, div[role="dialog"]', 5000);
 
   if (!modal) {
-    console.log('[Lumina Parser] Contact info modal did not appear');
     document.getElementById(styleId)?.remove();
     return {};
   }
@@ -1992,6 +2022,5 @@ export const scrapeContactInfo = async (): Promise<{ email?: string; phone?: str
     document.getElementById(styleId)?.remove();
   }, 300);
 
-  console.log('[Lumina Parser] Contact info result:', { email, phone });
   return { email, phone };
 };
