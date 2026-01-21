@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './constants';
+import { API_BASE_URL, SUPABASE_ANON_KEY } from './constants';
 import { ExtensionMessage, ApiResponse } from './types';
 
 // Fix: Declare chrome variable to resolve TS error
@@ -303,7 +303,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 
 /**
  * Helper to get headers with API Key
- * Note: Backend expects lowercase 'x-api-key' header
+ * Sends both Authorization (for Supabase gateway) and x-api-key (for app auth)
  */
 async function getHeaders(): Promise<HeadersInit> {
   const result = await chrome.storage.local.get('lumina_api_key');
@@ -311,7 +311,8 @@ async function getHeaders(): Promise<HeadersInit> {
 
   return {
     'Content-Type': 'application/json',
-    'x-api-key': apiKey  // Lowercase as expected by backend
+    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    'x-api-key': apiKey
   };
 }
 
@@ -326,7 +327,7 @@ async function checkAuthStatus(): Promise<ApiResponse> {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const response = await fetch(`${API_BASE_URL}/integrations/extension/me`, {
+    const response = await fetch(`${API_BASE_URL}/extension-auth`, {
       method: 'GET',
       credentials: 'omit',
       headers
@@ -403,7 +404,7 @@ async function checkCandidateStatus(sourceUrl: string): Promise<ApiResponse> {
     const normalizedSourceUrl = normalizeLinkedInUrl(sourceUrl);
     console.log('[Lumina Background] Checking candidate status for:', normalizedSourceUrl);
 
-    const url = new URL(`${API_BASE_URL}/integrations/linkedin/profiles/status`);
+    const url = new URL(`${API_BASE_URL}/linkedin-status`);
     url.searchParams.append('sourceUrl', normalizedSourceUrl);
 
     const response = await fetch(url.toString(), {
@@ -438,7 +439,7 @@ async function fetchJobs(): Promise<ApiResponse> {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const endpoint = `${API_BASE_URL}/integrations/extension/jobs`;
+    const endpoint = `${API_BASE_URL}/extension-jobs`;
     console.log('[Lumina Background] Fetching jobs from:', endpoint);
 
     const response = await fetch(endpoint, {
@@ -480,8 +481,8 @@ async function fetchStages(jobId?: string): Promise<ApiResponse> {
 
     // Include jobId parameter if provided for job-specific stages
     const endpoint = jobId
-      ? `${API_BASE_URL}/integrations/extension/stages?jobId=${encodeURIComponent(jobId)}`
-      : `${API_BASE_URL}/integrations/extension/stages`;
+      ? `${API_BASE_URL}/extension-stages?jobId=${encodeURIComponent(jobId)}`
+      : `${API_BASE_URL}/extension-stages`;
     console.log('[Lumina Background] Fetching stages from:', endpoint, jobId ? `(job: ${jobId})` : '(global)');
 
     const response = await fetch(endpoint, {
@@ -517,7 +518,7 @@ async function fetchLists(): Promise<ApiResponse> {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const response = await fetch(`${API_BASE_URL}/integrations/extension/lists`, {
+    const response = await fetch(`${API_BASE_URL}/extension-lists`, {
       method: 'GET',
       credentials: 'omit',
       headers
@@ -589,7 +590,7 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
 
     console.log('[Lumina Background] Transformed payload:', transformedPayload);
 
-    const response = await fetch(`${API_BASE_URL}/integrations/linkedin/profiles`, {
+    const response = await fetch(`${API_BASE_URL}/linkedin-import`, {
       method: 'POST',
       credentials: 'omit',
       headers,

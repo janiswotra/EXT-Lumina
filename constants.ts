@@ -1,4 +1,5 @@
-export const API_BASE_URL = 'https://lumina-api-kw353kceea-uc.a.run.app/api/v1';
+export const API_BASE_URL = 'https://lcvfhchrueipjtoudxit.supabase.co/functions/v1';
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjdmZoY2hydWVpcGp0b3VkeGl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxNzkyNDEsImV4cCI6MjA4Mzc1NTI0MX0.p2paiXI8pXH31fkkNK644greiI-TJRSqXNyInSRoJZI';
 export const APP_DOMAIN = 'https://app.yena.ai';
 
 // LinkedIn Selectors (Note: These are heuristic based as LI classes are obfuscated)
