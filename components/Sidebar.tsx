@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { Input } from './ui/Input';
 import { PickerModal, PickerOption } from './ui/PickerModal';
-// import { HarvestQueueSection } from './HarvestQueueSection'; // DISABLED: Feature not synced with main app yet
 import { CandidateProfile, Job, Stage, List } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -67,7 +66,7 @@ const SelectorButton: React.FC<{
         onClick={onClick}
         disabled={isLoading}
         className={cn(
-            "w-full flex items-center justify-between px-4 py-3.5 rounded-xl border transition-all",
+            "w-full flex items-center justify-between px-4 py-4 rounded-xl border transition-all",
             "hover:bg-white/5 active:scale-[0.99]",
             color === 'primary'
                 ? "bg-[#864AFF]/5 border-[#864AFF]/20 hover:border-[#864AFF]/40"
@@ -76,11 +75,11 @@ const SelectorButton: React.FC<{
     >
         <div className="flex items-center gap-3">
             <div className={cn(
-                "w-2.5 h-2.5 rounded-full",
+                "w-3 h-3 rounded-full",
                 color === 'primary' ? "bg-[#864AFF]" : "bg-gray-500"
             )} />
             <div className="text-left">
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-0.5">{label}</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</p>
                 <p className={cn(
                     "text-sm font-medium",
                     value ? "text-white" : "text-gray-500"
@@ -554,7 +553,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
 
                 {/* Assignment Section */}
-                <div className="px-6 py-5 space-y-3 border-b border-white/5">
+                <div className="px-6 py-6 space-y-4 border-b border-white/5">
                     <SelectorButton
                         label="Add to Job"
                         value={selectedJob?.title}

@@ -1,6 +1,5 @@
 import React from 'react';
 import { CandidateProfile } from '../types';
-// import { HarvestQueueSection } from './HarvestQueueSection'; // DISABLED: Feature not synced with main app yet
 
 // Fix: Declare chrome for TypeScript
 declare const chrome: any;

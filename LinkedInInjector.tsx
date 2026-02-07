@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { parseProfile, parseProfileWithRetry, is1stDegreeConnection, scrapeContactInfo, waitForProfileToLoad } from './utils/parser';
+import { parseProfile, parseProfileWithRetry, waitForProfileToLoad } from './utils/parser';
 import { Sidebar } from './components/Sidebar';
 import { Preview } from './components/Preview';
 import { Toast } from './components/Toast';
@@ -230,7 +230,7 @@ export const LinkedInInjector: React.FC = () => {
       return false;
     };
 
-    // Main function to load profile data
+    // Main function to load profile data - OPTIMIZED for instant response
     const loadProfileData = async () => {
       // Skip if extension context is invalid (extension was reloaded)
       if (!isExtensionContextValid()) {
@@ -245,84 +245,48 @@ export const LinkedInInjector: React.FC = () => {
       setIsFetchingData(true);
 
       try {
-        // STEP 1: Wait for LinkedIn's DOM to be ready (5s optimized timeout)
-        const isReady = await waitForProfileToLoad(5000);
+        // STEP 1: Parse profile IMMEDIATELY - no waiting (Attio-style instant response)
+        // DOM is ready by the time user clicks, no need to wait
+        const data = parseProfile();
         if (!isMounted) return;
 
-        // Fallback parsing: even if timeout, try to parse what's available
-        if (!isReady) {
-          // Don't return early - try parsing anyway with whatever is available
-        }
+        // STEP 2: Update UI immediately with parsed data
+        setProfileData((prev: any) => ({
+          ...data,
+          email: data.email || (prev.linkedinUrl === window.location.href ? prev.email : '') || '',
+          phone: data.phone || (prev.linkedinUrl === window.location.href ? prev.phone : '') || '',
+          linkedinUrl: window.location.href
+        }));
 
-        // STEP 2: Parse profile (NO scrolling for manual user interactions - smooth UX)
-        const data = await parseProfileWithRetry(3, 250, false);
-        if (!isMounted) return;
-
-
-        // STEP 3: Check if candidate exists in Yena (only if we have valid data)
-        // Uses normalized URL and ref-based correlation to prevent race conditions
+        // STEP 3: Check if candidate exists in Yena (BACKGROUND - doesn't block display)
         if (data.firstName && data.lastName && data.firstName !== 'Unknown') {
           const normalizedUrl = normalizeLinkedInUrl(window.location.href);
-          // Store the URL we're checking - this invalidates any previous pending check
           pendingStatusCheckUrlRef.current = normalizedUrl;
 
+          // Fire and forget - doesn't block UI
           safeSendMessage({
             type: 'CHECK_CANDIDATE_STATUS',
             payload: { sourceUrl: normalizedUrl }
           }).then((res: ApiResponse) => {
-            // CRITICAL: Only update state if this response is for the CURRENT profile
-            // This prevents race conditions when rapidly navigating between profiles
             const currentNormalizedUrl = normalizeLinkedInUrl(window.location.href);
             const isResponseForCurrentProfile = pendingStatusCheckUrlRef.current === normalizedUrl &&
                                                  currentNormalizedUrl === normalizedUrl;
 
             if (isMounted && isResponseForCurrentProfile && res && res.success && res.data) {
               setIsExisting(!!res.data.exists);
-            } else if (isMounted && !isResponseForCurrentProfile) {
             }
-          }).catch((err) => {
-            console.error('[Lumina] Status check failed:', err);
-            // On error, default to false (show as NEW) - safer than showing stale data
+          }).catch(() => {
+            // Silent fail - existence check is optional
             if (isMounted && pendingStatusCheckUrlRef.current === normalizedUrl) {
               setIsExisting(false);
             }
           });
         }
 
-        // STEP 4: Auto-scrape Contact Info - DISABLED per user request to prevent UI flashing/UX issues
-        /*
-        if (is1stDegreeConnection() && !hasScrapedCurrentUrl && !data.email && !data.phone) {
-          setHasScrapedCurrentUrl(true);
-
-          // Run in background, update when done
-          scrapeContactInfo().then(contactInfo => {
-            if (!isMounted) return;
-            if (contactInfo.email || contactInfo.phone) {
-              setProfileData((prev: any) => ({
-                ...prev,
-                ...(contactInfo.email && { email: contactInfo.email }),
-                ...(contactInfo.phone && { phone: contactInfo.phone })
-              }));
-            }
-          }).catch(err => {
-            console.error('[Lumina] Contact scrape failed:', err);
-          });
-        }
-        */
-
-        // STEP 5: Update profile data (only once on initial load)
-        setProfileData((prev: any) => ({
-          ...data,
-          // Preserve contact info if already scraped for this profile
-          email: data.email || (prev.linkedinUrl === window.location.href ? prev.email : '') || '',
-          phone: data.phone || (prev.linkedinUrl === window.location.href ? prev.phone : '') || '',
-          linkedinUrl: window.location.href
-        }));
-
         hasInitiallyLoaded = true;
 
       } catch (e) {
-        console.error('[Lumina] Error loading profile:', e);
+        // Silent error handling - don't spam console
       } finally {
         if (isMounted) {
           setIsFetchingData(false);

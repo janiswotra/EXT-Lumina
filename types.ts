@@ -85,6 +85,21 @@ export interface SaveCandidatePayload {
   listId?: string;
 }
 
+export interface LinkedInMessage {
+  id: string;
+  text: string;
+  senderName: string;
+  isOutbound: boolean;
+  timestamp: string;
+}
+
+export interface SyncMessagesPayload {
+  messages: LinkedInMessage[];
+  conversationId: string;
+  participantUrl: string;
+  participantName: string;
+}
+
 export type ExtensionMessage =
   | { type: 'SAVE_CANDIDATE'; payload: SaveCandidatePayload }
   | { type: 'CHECK_AUTH' }
@@ -93,4 +108,5 @@ export type ExtensionMessage =
   | { type: 'GET_STAGES'; payload?: { jobId: string } }
   | { type: 'GET_LISTS' }
   | { type: 'CHECK_FOR_UPDATES'; payload: { linkedinUrl: string; profileId?: string } }
-  | { type: 'SET_API_KEY'; payload: { apiKey: string } };
+  | { type: 'SET_API_KEY'; payload: { apiKey: string } }
+  | { type: 'SYNC_MESSAGES'; payload: SyncMessagesPayload };

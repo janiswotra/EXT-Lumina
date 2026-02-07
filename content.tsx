@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { LinkedInInjector } from './LinkedInInjector';
-import { parseProfileWithRetry, waitForProfileToLoad, parseProfile } from './utils/parser';
+import { parseProfileWithRetry, waitForProfileToLoad } from './utils/parser';
 
 // Handle TRIGGER_SCRAPE from background script (for "Check for Updates" feature)
 // This must be at the top level, NOT inside React, to ensure it's ready immediately

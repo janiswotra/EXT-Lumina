@@ -1,10 +1,10 @@
 {
   "name": "lumina-candidate-clipper",
-  "version": "1.0.28",
+  "version": "1.0.31",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && vite build -c vite.content.config.ts && vite build -c vite.contentApp.config.ts",
+    "build": "tsc && vite build && vite build -c vite.content.config.ts && vite build -c vite.contentApp.config.ts && vite build -c vite.contentMessages.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

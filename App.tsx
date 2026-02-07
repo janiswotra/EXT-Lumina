@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from './components/Button';
-// import { HarvestPanel } from './components/HarvestPanel'; // DISABLED: Feature not synced with main app yet
 import { APP_DOMAIN } from './constants';
-import { ApiResponse } from './types';
 
 // Fix: Declare chrome variable to resolve TS error
 declare const chrome: any;
@@ -11,27 +9,7 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // START DEBUG: Always authenticated for testing
     setIsAuthenticated(true);
-    /*
-    // Check if chrome runtime is available
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      // Check auth status via background script
-      chrome.runtime.sendMessage({ type: 'CHECK_AUTH' }, (response: ApiResponse) => {
-        if (chrome.runtime.lastError) {
-          console.warn('Background script not ready:', chrome.runtime.lastError);
-          setIsAuthenticated(false);
-          return;
-        }
-        setIsAuthenticated(response?.success ?? false);
-      });
-    } else {
-      // Fallback for non-extension environments (e.g. dev server)
-      console.warn('Chrome API not detected. Mocking authentication status.');
-      setIsAuthenticated(true);
-    }
-    */
-    // END DEBUG
   }, []);
 
   const openDashboard = () => {
@@ -54,9 +32,6 @@ const App: React.FC = () => {
 
       {/* Content */}
       <main className="flex-1 p-4 flex flex-col gap-4">
-        {/* Harvest Panel - DISABLED: Feature not synced with main app yet */}
-        {/* <HarvestPanel /> */}
-
         {/* Info Section */}
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <div className="flex items-start gap-3">

@@ -1,5 +1,5 @@
 import { API_BASE_URL, SUPABASE_ANON_KEY } from './constants';
-import { ExtensionMessage, ApiResponse } from './types';
+import { ExtensionMessage, ApiResponse, SyncMessagesPayload } from './types';
 
 // Fix: Declare chrome variable to resolve TS error
 declare const chrome: any;
@@ -209,6 +209,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
         console.log('[Lumina Background] API Key saved via SET_API_KEY');
         sendResponse({ success: true });
       });
+      return true;
+    }
+
+    if (message.type === 'SYNC_MESSAGES') {
+      console.log('[Lumina Background] Processing SYNC_MESSAGES');
+      handleSyncMessages(message.payload)
+        .then(sendResponse)
+        .catch((err) => sendResponse({ success: false, message: err.message }));
       return true;
     }
 
@@ -612,6 +620,59 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
 
   } catch (error: any) {
     console.error('[Lumina Background] Save Exception:', error);
+    return { success: false, message: error.message || 'Network error occurred.' };
+  }
+}
+
+/**
+ * Syncs LinkedIn messages to Yena via the linkedin-messages-sync Edge Function.
+ * Follows the same auth/error pattern as handleSaveCandidate.
+ */
+async function handleSyncMessages(payload: SyncMessagesPayload): Promise<ApiResponse> {
+  try {
+    const headers = await getHeaders() as any;
+    if (!headers['x-api-key']) {
+      return { success: false, message: 'Missing API Key', shouldAuth: true };
+    }
+
+    console.log('[Lumina Background] Syncing messages:', {
+      messageCount: payload.messages.length,
+      participant: payload.participantName,
+      conversationId: payload.conversationId,
+    });
+
+    const endpoint = `${API_BASE_URL}/linkedin-messages-sync`;
+    console.log('[Lumina Background] POST to:', endpoint);
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      credentials: 'omit',
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { success: false, message: 'Invalid API Key', shouldAuth: true };
+      }
+      if (response.status === 404) {
+        console.error('[Lumina Background] Edge Function not found (404). Has it been deployed?');
+        return { success: false, message: 'Message sync service not deployed. Deploy the linkedin-messages-sync Edge Function.' };
+      }
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Lumina Background] Message sync failed:', response.status, errorData);
+      throw new Error(`Sync failed (Status ${response.status}): ${errorData.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('[Lumina Background] Message sync success:', data);
+    return { success: true, data };
+
+  } catch (error: any) {
+    console.error('[Lumina Background] Message sync exception:', error);
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      return { success: false, message: 'Cannot reach sync service. Check if the Edge Function is deployed.' };
+    }
     return { success: false, message: error.message || 'Network error occurred.' };
   }
 }
