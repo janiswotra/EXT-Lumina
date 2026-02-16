@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from './Button';
 import { Input } from './ui/Input';
 import { PickerModal, PickerOption } from './ui/PickerModal';
@@ -17,7 +17,7 @@ interface SidebarProps {
     onClose: () => void;
     data: CandidateData;
     onUpdate: (data: CandidateData) => void;
-    onSave: (jobId?: string, stageId?: string, listId?: string) => void;
+    onSave: (jobId?: string, stageId?: string, listId?: string) => Promise<boolean>;
     isLoading: boolean;
     isExisting?: boolean;
 }
@@ -43,40 +43,42 @@ const InfoRow: React.FC<{
                     type="text"
                     value={value || ''}
                     onChange={(e) => onChange?.(e.target.value)}
-                    className="w-full text-sm text-white bg-white/5 border border-white/10 rounded-lg px-3 py-2 focus:outline-none focus:border-[#864AFF]/50 placeholder-gray-600 transition-colors"
+                    className="w-full text-sm text-white bg-white/5 border border-white/10 rounded-lg px-3 py-2 focus:outline-none focus:border-[#7FA1F0]/50 placeholder-gray-600 transition-colors"
                     placeholder={`Enter ${label.toLowerCase()}...`}
                 />
             ) : (
-                <span className="text-sm text-white block break-words leading-relaxed">{value || '—'}</span>
+                <span className="text-sm text-white block break-words leading-relaxed">{value || '-'}</span>
             )}
         </div>
     </div>
 );
 
-// Selector Button Component (triggers modal) - purple theme
+// Selector Button Component (triggers modal)
 const SelectorButton: React.FC<{
     label: string;
     value?: string;
     placeholder: string;
     onClick: () => void;
+    onFocus?: () => void;
     isLoading?: boolean;
     color?: 'primary' | 'secondary';
-}> = ({ label, value, placeholder, onClick, isLoading, color = 'primary' }) => (
+}> = ({ label, value, placeholder, onClick, onFocus, isLoading, color = 'primary' }) => (
     <button
         onClick={onClick}
+        onFocus={onFocus}
         disabled={isLoading}
         className={cn(
             "w-full flex items-center justify-between px-4 py-4 rounded-xl border transition-all",
             "hover:bg-white/5 active:scale-[0.99]",
             color === 'primary'
-                ? "bg-[#864AFF]/5 border-[#864AFF]/20 hover:border-[#864AFF]/40"
+                ? "bg-[#5F86E5]/8 border-[#7FA1F0]/25 hover:border-[#7FA1F0]/45"
                 : "bg-white/5 border-white/10 hover:border-white/20"
         )}
     >
         <div className="flex items-center gap-3">
             <div className={cn(
                 "w-3 h-3 rounded-full",
-                color === 'primary' ? "bg-[#864AFF]" : "bg-gray-500"
+                color === 'primary' ? "bg-[#7FA1F0]" : "bg-gray-500"
             )} />
             <div className="text-left">
                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</p>
@@ -168,6 +170,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [showJobPicker, setShowJobPicker] = useState(false);
     const [showStagePicker, setShowStagePicker] = useState(false);
     const [showListPicker, setShowListPicker] = useState(false);
+    const lowConfidenceFields = formData.parseConfidence?.lowFields || [];
+    const showConfidenceWarning = lowConfidenceFields.length > 0;
+    const lowConfidenceLabel = lowConfidenceFields
+        .map((field) => field === 'currentCompany' ? 'company' : field === 'jobTitle' ? 'job title' : field)
+        .join(', ');
 
     useEffect(() => {
         setFormData(data);
@@ -178,22 +185,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             checkAuth();
         }
     }, [isOpen]);
-
-    // Fetch Jobs, Lists, and Stages when authenticated
-    useEffect(() => {
-        if (authStatus === 'AUTHENTICATED') {
-            fetchJobs();
-            fetchLists();
-            fetchStages();
-        }
-    }, [authStatus]);
-
-    // Fetch Stages when job is selected
-    useEffect(() => {
-        if (selectedJob) {
-            fetchStagesForJob(selectedJob.id);
-        }
-    }, [selectedJob]);
 
     const checkAuth = () => {
         setAuthStatus('CHECKING');
@@ -231,142 +222,203 @@ export const Sidebar: React.FC<SidebarProps> = ({
         chrome.storage.local.set({ [key]: { data, timestamp: Date.now() } });
     };
 
-    const fetchJobs = async () => {
+    const fetchJobs = useCallback(async (forceRefresh = false): Promise<void> => {
         setLoadingJobs(true);
-        const cached = await getCachedData('lumina_cache_jobs');
-        if (cached) {
-            setJobs(cached);
-            setLoadingJobs(false);
-            return;
+        if (!forceRefresh) {
+            const cached = await getCachedData('lumina_cache_jobs');
+            if (cached) {
+                setJobs(cached);
+                setLoadingJobs(false);
+                return;
+            }
         }
 
         try {
-            chrome.runtime.sendMessage({ type: 'GET_JOBS' }, (response: any) => {
-                setLoadingJobs(false);
-                if (response && response.success && response.data) {
-                    // Handle various response formats: { jobs: [...] }, [...], or { data: [...] }
-                    let jobsData: Job[] = [];
-                    if (Array.isArray(response.data)) {
-                        jobsData = response.data;
-                    } else if (response.data.jobs && Array.isArray(response.data.jobs)) {
-                        jobsData = response.data.jobs;
-                    } else if (response.data.data && Array.isArray(response.data.data)) {
-                        jobsData = response.data.data;
-                    }
-                    setJobs(jobsData);
-                    if (jobsData.length > 0) {
+            await new Promise<void>((resolve) => {
+                chrome.runtime.sendMessage({ type: 'GET_JOBS' }, (response: any) => {
+                    setLoadingJobs(false);
+                    if (response && response.success && response.data) {
+                        // Handle various response formats: { jobs: [...] }, [...], or { data: [...] }
+                        let jobsData: Job[] = [];
+                        if (Array.isArray(response.data)) {
+                            jobsData = response.data;
+                        } else if (response.data.jobs && Array.isArray(response.data.jobs)) {
+                            jobsData = response.data.jobs;
+                        } else if (response.data.data && Array.isArray(response.data.data)) {
+                            jobsData = response.data.data;
+                        }
+                        setJobs(jobsData);
                         setCachedData('lumina_cache_jobs', jobsData);
+                    } else {
+                        console.warn('[Yena Sidebar] GET_JOBS failed:', response);
                     }
-                } else {
-                    console.warn('[Yena Sidebar] GET_JOBS failed:', response);
-                }
+                    resolve();
+                });
             });
         } catch (e) {
             setLoadingJobs(false);
             console.error('[Yena Sidebar] Failed to fetch jobs:', e);
         }
-    };
+    }, []);
 
-    const fetchStages = async () => {
+    const fetchStages = useCallback(async (forceRefresh = false): Promise<void> => {
         setLoadingStages(true);
-        const cached = await getCachedData('lumina_cache_stages');
-        if (cached) {
-            setStages(cached);
-            setLoadingStages(false);
-            return;
+        if (!forceRefresh) {
+            const cached = await getCachedData('lumina_cache_stages');
+            if (cached) {
+                setStages(cached);
+                setLoadingStages(false);
+                return;
+            }
         }
 
         try {
-            chrome.runtime.sendMessage({ type: 'GET_STAGES' }, (response: any) => {
-                setLoadingStages(false);
-                if (response && response.success && response.data) {
-                    let stagesData: Stage[] = [];
-                    if (Array.isArray(response.data)) {
-                        stagesData = response.data;
-                    } else if (response.data.stages && Array.isArray(response.data.stages)) {
-                        stagesData = response.data.stages;
-                    } else if (response.data.data && Array.isArray(response.data.data)) {
-                        stagesData = response.data.data;
-                    }
-                    setStages(stagesData);
-                    if (stagesData.length > 0) {
+            await new Promise<void>((resolve) => {
+                chrome.runtime.sendMessage({ type: 'GET_STAGES' }, (response: any) => {
+                    setLoadingStages(false);
+                    if (response && response.success && response.data) {
+                        let stagesData: Stage[] = [];
+                        if (Array.isArray(response.data)) {
+                            stagesData = response.data;
+                        } else if (response.data.stages && Array.isArray(response.data.stages)) {
+                            stagesData = response.data.stages;
+                        } else if (response.data.data && Array.isArray(response.data.data)) {
+                            stagesData = response.data.data;
+                        }
+                        setStages(stagesData);
                         setCachedData('lumina_cache_stages', stagesData);
+                    } else {
+                        console.warn('[Yena Sidebar] GET_STAGES failed:', response);
                     }
-                } else {
-                    console.warn('[Yena Sidebar] GET_STAGES failed:', response);
-                }
+                    resolve();
+                });
             });
         } catch (e) {
             setLoadingStages(false);
             console.error('[Yena Sidebar] Failed to fetch stages:', e);
         }
-    };
+    }, []);
 
-    const fetchStagesForJob = (jobId: string) => {
+    const fetchStagesForJob = useCallback(async (jobId: string, resetSelection = true): Promise<void> => {
         setLoadingStages(true);
-        setSelectedStage(null);
+        if (resetSelection) {
+            setSelectedStage(null);
+        }
         try {
-            chrome.runtime.sendMessage({ type: 'GET_STAGES', payload: { jobId } }, (response: any) => {
-                setLoadingStages(false);
-                if (response && response.success && response.data) {
-                    let stagesData: Stage[] = [];
-                    if (Array.isArray(response.data)) {
-                        stagesData = response.data;
-                    } else if (response.data.stages && Array.isArray(response.data.stages)) {
-                        stagesData = response.data.stages;
-                    } else if (response.data.data && Array.isArray(response.data.data)) {
-                        stagesData = response.data.data;
+            await new Promise<void>((resolve) => {
+                chrome.runtime.sendMessage({ type: 'GET_STAGES', payload: { jobId } }, (response: any) => {
+                    setLoadingStages(false);
+                    if (response && response.success && response.data) {
+                        let stagesData: Stage[] = [];
+                        if (Array.isArray(response.data)) {
+                            stagesData = response.data;
+                        } else if (response.data.stages && Array.isArray(response.data.stages)) {
+                            stagesData = response.data.stages;
+                        } else if (response.data.data && Array.isArray(response.data.data)) {
+                            stagesData = response.data.data;
+                        }
+                        setStages(stagesData);
+                        // Keep current selection during background refresh, if still present.
+                        if (stagesData.length > 0) {
+                            setSelectedStage((prev) => {
+                                if (!resetSelection && prev) {
+                                    const matchedStage = stagesData.find((stage) => stage.id === prev.id);
+                                    if (matchedStage) {
+                                        return matchedStage;
+                                    }
+                                }
+                                return stagesData[0];
+                            });
+                        } else {
+                            setSelectedStage(null);
+                        }
+                    } else {
+                        console.warn('[Yena Sidebar] GET_STAGES for job failed:', response);
+                        setStages([]);
                     }
-                    setStages(stagesData);
-                    // Auto-select the first stage when stages are loaded for a job
-                    if (stagesData.length > 0) {
-                        setSelectedStage(stagesData[0]);
-                    }
-                } else {
-                    console.warn('[Yena Sidebar] GET_STAGES for job failed:', response);
-                    setStages([]);
-                }
+                    resolve();
+                });
             });
         } catch (e) {
             setLoadingStages(false);
             setStages([]);
         }
-    };
+    }, []);
 
-    const fetchLists = async () => {
+    const fetchLists = useCallback(async (forceRefresh = false): Promise<void> => {
         setLoadingLists(true);
-        const cached = await getCachedData('lumina_cache_lists');
-        if (cached) {
-            setLists(cached);
-            setLoadingLists(false);
-            return;
+        if (!forceRefresh) {
+            const cached = await getCachedData('lumina_cache_lists');
+            if (cached) {
+                setLists(cached);
+                setLoadingLists(false);
+                return;
+            }
         }
 
         try {
-            chrome.runtime.sendMessage({ type: 'GET_LISTS' }, (response: any) => {
-                setLoadingLists(false);
-                if (response && response.success && response.data) {
-                    let listsData: List[] = [];
-                    if (Array.isArray(response.data)) {
-                        listsData = response.data;
-                    } else if (response.data.lists && Array.isArray(response.data.lists)) {
-                        listsData = response.data.lists;
-                    } else if (response.data.data && Array.isArray(response.data.data)) {
-                        listsData = response.data.data;
-                    }
-                    setLists(listsData);
-                    if (listsData.length > 0) {
+            await new Promise<void>((resolve) => {
+                chrome.runtime.sendMessage({ type: 'GET_LISTS' }, (response: any) => {
+                    setLoadingLists(false);
+                    if (response && response.success && response.data) {
+                        let listsData: List[] = [];
+                        if (Array.isArray(response.data)) {
+                            listsData = response.data;
+                        } else if (response.data.lists && Array.isArray(response.data.lists)) {
+                            listsData = response.data.lists;
+                        } else if (response.data.data && Array.isArray(response.data.data)) {
+                            listsData = response.data.data;
+                        }
+                        setLists(listsData);
                         setCachedData('lumina_cache_lists', listsData);
+                    } else {
+                        console.warn('[Yena Sidebar] GET_LISTS failed:', response);
                     }
-                } else {
-                    console.warn('[Yena Sidebar] GET_LISTS failed:', response);
-                }
+                    resolve();
+                });
             });
         } catch (e) {
             setLoadingLists(false);
             console.error('[Yena Sidebar] Failed to fetch lists:', e);
         }
-    };
+    }, []);
+
+    const loadMetadata = useCallback(async (forceRefresh = true): Promise<void> => {
+        await Promise.all([
+            fetchJobs(forceRefresh),
+            fetchLists(forceRefresh),
+            selectedJob ? fetchStagesForJob(selectedJob.id, false) : fetchStages(forceRefresh)
+        ]);
+    }, [fetchJobs, fetchLists, fetchStages, fetchStagesForJob, selectedJob]);
+
+    // Fetch Jobs, Lists, and Stages when authenticated
+    useEffect(() => {
+        if (authStatus === 'AUTHENTICATED') {
+            void loadMetadata(true);
+        }
+    }, [authStatus, loadMetadata]);
+
+    // Fetch Stages when job is selected
+    useEffect(() => {
+        if (selectedJob) {
+            void fetchStagesForJob(selectedJob.id, true);
+        }
+    }, [selectedJob, fetchStagesForJob]);
+
+    // Refresh metadata periodically for new candidates while sidebar is open.
+    useEffect(() => {
+        if (!isOpen || authStatus !== 'AUTHENTICATED' || isExisting) {
+            return;
+        }
+
+        const intervalId = window.setInterval(() => {
+            void loadMetadata(true);
+        }, 30000);
+
+        return () => {
+            window.clearInterval(intervalId);
+        };
+    }, [isOpen, authStatus, isExisting, loadMetadata]);
 
     const handleConnect = () => {
         if (!apiKey.trim()) return;
@@ -386,19 +438,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
 
     const handleChange = (field: keyof CandidateData, value: string) => {
-        const updated = { ...formData, [field]: value };
+        const updated: CandidateData = { ...formData, [field]: value };
+
+        if (
+            (field === 'headline' || field === 'location' || field === 'currentCompany') &&
+            updated.parseConfidence
+        ) {
+            const fieldKey = field as 'headline' | 'location' | 'currentCompany';
+            const nextLowFields = updated.parseConfidence.lowFields.filter((f) => f !== fieldKey);
+            updated.parseConfidence = {
+                ...updated.parseConfidence,
+                [fieldKey]: 'high',
+                lowFields: nextLowFields,
+                overall: nextLowFields.length > 0 ? 'medium' : 'high',
+            };
+        }
+
         setFormData(updated);
         onUpdate(updated);
     };
 
-    const handleSaveClick = () => {
-        onSave(
+    const handleSaveClick = async () => {
+        const didSave = await onSave(
             selectedJob?.id || undefined,
             selectedStage?.id || undefined,
             selectedList?.id || undefined
         );
-        setIsSuccess(true);
-        setTimeout(() => setIsSuccess(false), 3000);
+        if (didSave) {
+            setIsSuccess(true);
+            setTimeout(() => setIsSuccess(false), 3000);
+        }
     };
 
     // Convert to picker options
@@ -426,7 +495,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // --- RENDER: Auth Screen ---
     if (authStatus === 'MISSING_KEY' || authStatus === 'CHECKING') {
         return (
-            <div className="fixed right-0 top-0 h-full w-[480px] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
+            <div className="fixed right-0 top-0 h-full w-[min(520px,92vw)] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
                 {/* Header */}
                 <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -446,8 +515,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                 {/* Auth Content */}
                 <div className="flex-1 flex flex-col items-center justify-center p-8">
-                    <div className="w-20 h-20 rounded-2xl bg-[#864AFF]/10 border border-[#864AFF]/20 flex items-center justify-center mb-8">
-                        <svg className="w-10 h-10 text-[#864AFF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-20 h-20 rounded-2xl bg-[#5F86E5]/12 border border-[#7FA1F0]/25 flex items-center justify-center mb-8">
+                        <svg className="w-10 h-10 text-[#7FA1F0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                         </svg>
                     </div>
@@ -485,7 +554,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     // --- RENDER: Authenticated Sidebar ---
     return (
-        <div className="fixed right-0 top-0 h-full w-[480px] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
+        <div className="fixed right-0 top-0 h-full w-[min(520px,92vw)] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
 
             {/* Header */}
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between shrink-0">
@@ -501,16 +570,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors",
                         isExisting
-                            ? "bg-[#864AFF]/10 border-[#864AFF]/20"
+                            ? "bg-[#5F86E5]/12 border-[#7FA1F0]/25"
                             : "bg-amber-500/10 border-amber-500/20"
                     )}>
                         <div className={cn(
                             "w-2 h-2 rounded-full animate-pulse",
-                            isExisting ? "bg-[#864AFF]" : "bg-amber-500"
+                            isExisting ? "bg-[#7FA1F0]" : "bg-amber-500"
                         )} />
                         <span className={cn(
                             "text-xs font-medium",
-                            isExisting ? "text-[#864AFF]" : "text-amber-400"
+                            isExisting ? "text-[#C7D8FF]" : "text-amber-400"
                         )}>
                             {isExisting ? 'In Yena' : 'New Candidate'}
                         </span>
@@ -529,7 +598,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {/* Profile Header */}
                 <div className="px-6 py-6 border-b border-white/5">
                     <div className="flex items-start gap-4">
-                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#864AFF]/30 to-purple-500/30 p-0.5 shrink-0">
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#5F86E5]/35 to-[#7FA1F0]/25 p-0.5 shrink-0">
                             <div className="w-full h-full rounded-full overflow-hidden bg-[#1a1b1e] flex items-center justify-center">
                                 {formData.profilePictureUrl ? (
                                     <img src={formData.profilePictureUrl} alt="Profile" className="w-full h-full object-cover" />
@@ -550,6 +619,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <p className="text-sm text-gray-400 mt-1 leading-relaxed">{formData.headline}</p>
                         </div>
                     </div>
+                    {showConfidenceWarning && (
+                        <div className="mt-4 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-400/25 text-[12px] text-amber-300 leading-snug">
+                            Some parsed fields may be uncertain ({lowConfidenceLabel}). Please review before saving.
+                        </div>
+                    )}
                 </div>
 
                 {/* Assignment Section */}
@@ -558,6 +632,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         label="Add to Job"
                         value={selectedJob?.title}
                         placeholder="Select a job"
+                        onFocus={() => { void loadMetadata(true); }}
                         onClick={() => setShowJobPicker(true)}
                         isLoading={loadingJobs}
                         color="primary"
@@ -649,10 +724,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <div className="space-y-3 pb-4">
                                 {formData.experiences.map((exp: any, i: number) => (
                                     <div key={i} className="flex items-start gap-3 py-2 px-3 bg-white/[0.02] rounded-lg border border-white/5">
-                                        <div className="w-2 h-2 rounded-full bg-[#864AFF] mt-2 shrink-0" />
+                                        <div className="w-2 h-2 rounded-full bg-[#7FA1F0] mt-2 shrink-0" />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium text-white">{exp.title}</p>
-                                            <p className="text-xs text-gray-400 mt-0.5">{exp.company} • {exp.startDate} - {exp.endDate || 'Present'}</p>
+                                            <p className="text-xs text-gray-400 mt-0.5">{exp.company} | {exp.startDate} - {exp.endDate || 'Present'}</p>
                                             {exp.description && (
                                                 <p className="text-xs text-gray-500 mt-2 leading-relaxed whitespace-pre-wrap">
                                                     {exp.description}
@@ -673,7 +748,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 shrink-0" />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium text-white">{edu.school}</p>
-                                            <p className="text-xs text-gray-400 mt-0.5">{edu.degree}{edu.field ? ` • ${edu.field}` : ''}</p>
+                                            <p className="text-xs text-gray-400 mt-0.5">{edu.degree}{edu.field ? ` | ${edu.field}` : ''}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -685,7 +760,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <CollapsibleSection title="Skills" count={formData.skills.length}>
                             <div className="flex flex-wrap gap-1.5 pb-4 max-h-[200px] overflow-y-auto">
                                 {formData.skills.map((skill, i) => (
-                                    <span key={i} className="text-xs text-gray-300 bg-white/5 px-2 py-1 rounded-md border border-white/10 hover:border-[#864AFF]/30 hover:bg-[#864AFF]/5 transition-colors cursor-default">
+                                    <span key={i} className="text-xs text-gray-300 bg-white/5 px-2 py-1 rounded-md border border-white/10 hover:border-[#7FA1F0]/35 hover:bg-[#5F86E5]/10 transition-colors cursor-default">
                                         {skill}
                                     </span>
                                 ))}
@@ -710,7 +785,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <div className="space-y-3 pb-4">
                                 {formData.certifications.map((cert: any, i: number) => (
                                     <div key={i} className="flex items-start gap-3 py-2 px-3 bg-white/[0.02] rounded-lg border border-white/5">
-                                        <div className="w-2 h-2 rounded-full bg-green-500 mt-2 shrink-0" />
+                                        <div className="w-2 h-2 rounded-full bg-[#7FA1F0] mt-2 shrink-0" />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium text-white">{cert.name}</p>
                                             {cert.issuer && <p className="text-xs text-gray-400 mt-0.5">{cert.issuer}</p>}
@@ -762,7 +837,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     isLoading={isLoading}
                     className={cn(
                         "w-full py-4 text-base shadow-lg",
-                        isSuccess && "bg-green-600 hover:bg-green-500"
+                        isSuccess && "bg-[#4E76D9] hover:bg-[#436BCF]"
                     )}
                 >
                     {isSuccess ? (

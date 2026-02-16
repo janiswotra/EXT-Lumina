@@ -82,14 +82,39 @@ const processQueue = async () => {
 const scrapeUrlInNewTab = (url: string): Promise<any> => {
   return new Promise(async (resolve, reject) => {
     let tabId: number | undefined;
+    let settled = false;
+    let messageListener: ((message: any, sender: any) => void) | null = null;
+    let tabUpdatedListener: ((uTabId: number, info: any) => void) | null = null;
+    let timeout: ReturnType<typeof setTimeout>;
 
     console.log('[Lumina Background] scrapeUrlInNewTab called for:', url);
 
+    const cleanup = () => {
+      if (messageListener) {
+        chrome.runtime.onMessage.removeListener(messageListener);
+        messageListener = null;
+      }
+      if (tabUpdatedListener) {
+        chrome.tabs.onUpdated.removeListener(tabUpdatedListener);
+        tabUpdatedListener = null;
+      }
+      clearTimeout(timeout);
+    };
+
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
     // Timeout safety - max 30 seconds per scrape
-    const timeout = setTimeout(() => {
+    timeout = setTimeout(() => {
       console.log('[Lumina Background] ⏰ TIMEOUT reached for tab:', tabId);
-      if (tabId) chrome.tabs.remove(tabId);
-      reject(new Error('Scraping timed out'));
+      settle(() => {
+        if (tabId) chrome.tabs.remove(tabId).catch(() => null);
+        reject(new Error('Scraping timed out'));
+      });
     }, 30000);
 
     try {
@@ -106,15 +131,14 @@ const scrapeUrlInNewTab = (url: string): Promise<any> => {
       // But for "headless" scraping, we might need to ping it or wait for a specific signal
 
       // Setup a one-time listener for this specific scraping session
-      const messageListener = (message: any, sender: any) => {
+      messageListener = (message: any, sender: any) => {
         console.log('[Lumina Background] Message received:', message.type, 'from tab:', sender.tab?.id);
         if (sender.tab?.id === tabId && message.type === 'PROFILE_DATA_EXTRACTED') {
-          console.log('[Lumina Background] ✅ Got PROFILE_DATA_EXTRACTED!', message.data?.firstName);
-          chrome.runtime.onMessage.removeListener(messageListener);
-          clearTimeout(timeout);
-          if (tabId) chrome.tabs.remove(tabId);
-          resolve(message.data);
-          return;
+          console.log('[Lumina Background] Got PROFILE_DATA_EXTRACTED:', message.data?.firstName);
+          settle(() => {
+            if (tabId) chrome.tabs.remove(tabId).catch(() => null);
+            resolve(message.data);
+          });
         }
       };
 
@@ -122,23 +146,28 @@ const scrapeUrlInNewTab = (url: string): Promise<any> => {
 
       // 3. Inject script if needed (usually handled by manifest, but ensure it runs)
       // Note: We can send a message to the tab to force a report if it's already loaded
-      chrome.tabs.onUpdated.addListener(function listener(uTabId: number, info: any) {
+      tabUpdatedListener = (uTabId: number, info: any) => {
         if (uTabId === tabId && info.status === 'complete') {
           console.log('[Lumina Background] Tab finished loading, waiting 2s...');
-          chrome.tabs.onUpdated.removeListener(listener);
+          if (tabUpdatedListener) {
+            chrome.tabs.onUpdated.removeListener(tabUpdatedListener);
+            tabUpdatedListener = null;
+          }
           setTimeout(() => {
             console.log('[Lumina Background] Sending TRIGGER_SCRAPE to tab:', tabId);
             chrome.tabs.sendMessage(tabId!, { type: 'TRIGGER_SCRAPE' })
-              .then(() => console.log('[Lumina Background] ✅ TRIGGER_SCRAPE sent'))
-              .catch((err: any) => console.error('[Lumina Background] ❌ TRIGGER_SCRAPE failed:', err));
+              .then(() => console.log('[Lumina Background] TRIGGER_SCRAPE sent'))
+              .catch((err: any) => console.error('[Lumina Background] TRIGGER_SCRAPE failed:', err));
           }, 2000);
         }
-      });
+      };
+      chrome.tabs.onUpdated.addListener(tabUpdatedListener);
 
     } catch (e: any) {
-      clearTimeout(timeout);
-      if (tabId) chrome.tabs.remove(tabId);
-      reject(e);
+      settle(() => {
+        if (tabId) chrome.tabs.remove(tabId).catch(() => null);
+        reject(e);
+      });
     }
   });
 };
@@ -397,6 +426,81 @@ function normalizeLinkedInUrl(inputUrl: string): string {
   }
 }
 
+function extractLinkedInMemberId(inputUrl: string): string | null {
+  const normalized = normalizeLinkedInUrl(inputUrl || '');
+
+  const profileMatch = normalized.match(/\/in\/(A[A-Z][a-zA-Z0-9_-]{20,})/);
+  if (profileMatch) return profileMatch[1];
+
+  const salesMatch = normalized.match(/\/sales\/(?:lead|people)\/([^/?#]+)/);
+  if (!salesMatch) return null;
+
+  const token = (salesMatch[1] || '').split(',')[0];
+  if (/^A[A-Z][a-zA-Z0-9_-]{20,}$/.test(token)) return token;
+  return null;
+}
+
+function buildLinkedInIdentityBundle(sourceUrl: string): {
+  normalizedUrl: string;
+  urls: string[];
+  memberIds: string[];
+} {
+  const normalizedUrl = normalizeLinkedInUrl(sourceUrl || '');
+  const urlSet = new Set<string>();
+  const memberIdSet = new Set<string>();
+
+  if (normalizedUrl) urlSet.add(normalizedUrl);
+
+  const memberId = extractLinkedInMemberId(normalizedUrl);
+  if (memberId) {
+    memberIdSet.add(memberId);
+    urlSet.add(`https://www.linkedin.com/in/${memberId}`);
+  }
+
+  return {
+    normalizedUrl,
+    urls: Array.from(urlSet),
+    memberIds: Array.from(memberIdSet)
+  };
+}
+
+function validateProfileBeforeSave(frontendProfile: any): string | null {
+  const firstName = (frontendProfile?.firstName || '').trim();
+  const lastName = (frontendProfile?.lastName || '').trim();
+  const fullName = `${firstName} ${lastName}`.trim().toLowerCase();
+  const sourceUrl = (frontendProfile?.linkedinUrl || frontendProfile?.sourceUrl || '').trim();
+
+  const hasValidUrl = /^https?:\/\/(www\.)?linkedin\.com\/(in\/|sales\/lead\/|talent\/profile\/)/i.test(sourceUrl);
+  if (!hasValidUrl) {
+    return 'Invalid LinkedIn profile URL.';
+  }
+
+  if (!firstName && !lastName) {
+    return 'First Name or Last Name is required.';
+  }
+
+  if (!firstName || fullName === 'unknown') {
+    return 'Profile parse looks incomplete. Please reload the LinkedIn profile and try again.';
+  }
+
+  const signalCount = [
+    !!(frontendProfile?.headline || '').trim(),
+    !!(frontendProfile?.location || '').trim(),
+    !!(frontendProfile?.currentCompany || '').trim(),
+    (frontendProfile?.about || '').trim().length > 20,
+    Array.isArray(frontendProfile?.experiences) && frontendProfile.experiences.length > 0,
+    Array.isArray(frontendProfile?.educations) && frontendProfile.educations.length > 0,
+    Array.isArray(frontendProfile?.skills) && frontendProfile.skills.length > 0,
+    typeof frontendProfile?.profilePictureUrl === 'string' && frontendProfile.profilePictureUrl.startsWith('http')
+  ].filter(Boolean).length;
+
+  if (signalCount < 2) {
+    return 'Profile data quality too low. Scroll the LinkedIn profile and retry.';
+  }
+
+  return null;
+}
+
 /**
  * Checks if candidate exists via /status endpoint.
  * Uses normalized URL to ensure consistent matching regardless of query params.
@@ -447,13 +551,14 @@ async function fetchJobs(): Promise<ApiResponse> {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const endpoint = `${API_BASE_URL}/extension-jobs`;
+    const endpoint = `${API_BASE_URL}/extension-jobs?_ts=${Date.now()}`;
     console.log('[Lumina Background] Fetching jobs from:', endpoint);
 
     const response = await fetch(endpoint, {
       method: 'GET',
       credentials: 'omit',
-      headers
+      headers,
+      cache: 'no-store'
     });
 
     console.log('[Lumina Background] Jobs response status:', response.status);
@@ -487,16 +592,19 @@ async function fetchStages(jobId?: string): Promise<ApiResponse> {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    // Include jobId parameter if provided for job-specific stages
-    const endpoint = jobId
-      ? `${API_BASE_URL}/extension-stages?jobId=${encodeURIComponent(jobId)}`
-      : `${API_BASE_URL}/extension-stages`;
+    const endpointUrl = new URL(`${API_BASE_URL}/extension-stages`);
+    if (jobId) {
+      endpointUrl.searchParams.set('jobId', jobId);
+    }
+    endpointUrl.searchParams.set('_ts', Date.now().toString());
+    const endpoint = endpointUrl.toString();
     console.log('[Lumina Background] Fetching stages from:', endpoint, jobId ? `(job: ${jobId})` : '(global)');
 
     const response = await fetch(endpoint, {
       method: 'GET',
       credentials: 'omit',
-      headers
+      headers,
+      cache: 'no-store'
     });
 
 
@@ -526,10 +634,12 @@ async function fetchLists(): Promise<ApiResponse> {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const response = await fetch(`${API_BASE_URL}/extension-lists`, {
+    const endpoint = `${API_BASE_URL}/extension-lists?_ts=${Date.now()}`;
+    const response = await fetch(endpoint, {
       method: 'GET',
       credentials: 'omit',
-      headers
+      headers,
+      cache: 'no-store'
     });
 
     if (!response.ok) {
@@ -564,10 +674,18 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
 
     // Transform the profile data to match backend's expected structure
     const frontendProfile = body.profile || {};
+    const profileValidationError = validateProfileBeforeSave(frontendProfile);
+    if (profileValidationError) {
+      return { success: false, message: profileValidationError };
+    }
+
+    const identityBundle = buildLinkedInIdentityBundle(
+      frontendProfile.linkedinUrl || frontendProfile.sourceUrl || ''
+    );
 
     const transformedPayload = {
       profile: {
-        sourceUrl: frontendProfile.linkedinUrl || frontendProfile.sourceUrl || '',
+        sourceUrl: identityBundle.normalizedUrl,
         name: {
           firstName: frontendProfile.firstName || '',
           lastName: frontendProfile.lastName || ''
@@ -587,6 +705,11 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
         certifications: frontendProfile.certifications || [],
         courses: frontendProfile.courses || [],
         organizations: frontendProfile.organizations || [],
+        linkedinIdentifiers: {
+          normalizedUrl: identityBundle.normalizedUrl,
+          urls: identityBundle.urls,
+          memberIds: identityBundle.memberIds
+        },
         // Include the user ID who imported this profile
         ...(importedByUserId && { importedByUserId })
       },
