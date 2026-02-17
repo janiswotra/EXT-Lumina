@@ -66,7 +66,6 @@ const SelectorButton: React.FC<{
     <button
         onClick={onClick}
         onFocus={onFocus}
-        disabled={isLoading}
         className={cn(
             "w-full flex items-center justify-between px-4 py-4 rounded-xl border transition-all",
             "hover:bg-white/5 active:scale-[0.99]",
@@ -404,21 +403,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             void fetchStagesForJob(selectedJob.id, true);
         }
     }, [selectedJob, fetchStagesForJob]);
-
-    // Refresh metadata periodically for new candidates while sidebar is open.
-    useEffect(() => {
-        if (!isOpen || authStatus !== 'AUTHENTICATED' || isExisting) {
-            return;
-        }
-
-        const intervalId = window.setInterval(() => {
-            void loadMetadata(true);
-        }, 30000);
-
-        return () => {
-            window.clearInterval(intervalId);
-        };
-    }, [isOpen, authStatus, isExisting, loadMetadata]);
 
     const handleConnect = () => {
         if (!apiKey.trim()) return;
