@@ -93,7 +93,7 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                 </div>
 
                 {/* Search */}
-                <div className="px-3 py-2 border-b border-[#27282B]">
+                <div className="px-3 py-2.5 border-b border-[#27282B]">
                     <div className="relative flex items-center">
                         <svg className="absolute left-2.5 w-4 h-4 text-[#A2A4A7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -104,13 +104,13 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder={searchPlaceholder}
-                            className="w-full h-[32px] pl-8 pr-3 bg-transparent rounded-lg text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] placeholder:text-[rgba(255,255,255,0.29)] shadow-[inset_0px_0px_0px_1px_#27282B] focus:shadow-[inset_0px_0px_0px_1px_#10B981] focus:outline-none transition-shadow duration-140"
+                            className="w-full h-[36px] pl-8 pr-3 bg-transparent rounded-lg text-sm font-medium text-[#EEEFF1] placeholder:text-[rgba(255,255,255,0.29)] shadow-[inset_0px_0px_0px_1px_#27282B] focus:shadow-[inset_0px_0px_0px_1px_#7FA1F0] focus:outline-none transition-shadow duration-140"
                         />
                     </div>
                 </div>
 
                 {/* Options List */}
-                <div ref={listRef} className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+                <div ref={listRef} className="flex-1 overflow-y-auto p-3 space-y-2">
                     {isLoading ? (
                         <div className="flex items-center justify-center py-8">
                             <svg className="animate-spin w-5 h-5 text-[#A2A4A7]" fill="none" viewBox="0 0 24 24">
@@ -131,9 +131,9 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                                     onClose();
                                 }}
                                 className={cn(
-                                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-all duration-140",
+                                    "w-full flex items-start min-h-[54px] gap-3 px-4 py-3 rounded-xl text-left transition-all duration-140",
                                     selectedId === option.id
-                                        ? "bg-[#864AFF]/10 shadow-[inset_0px_0px_0px_1px_rgba(134,74,255,0.32)] text-[#EEEFF1]"
+                                        ? "bg-[#5F86E5]/12 shadow-[inset_0px_0px_0px_1px_rgba(127,161,240,0.38)] text-[#EEEFF1]"
                                         : "hover:bg-[#27282B] text-[#EEEFF1]"
                                 )}
                             >
@@ -142,24 +142,24 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                                     <span className="text-[#A2A4A7]">{option.icon}</span>
                                 ) : option.color ? (
                                     <span
-                                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                                        className="w-3 h-3 mt-1.5 rounded-full shrink-0"
                                         style={{ backgroundColor: option.color }}
                                     />
                                 ) : (
-                                    <span className="w-2.5 h-2.5 rounded-full bg-[#864AFF] shrink-0" />
+                                    <span className="w-2.5 h-2.5 mt-2 rounded-full bg-[#7FA1F0] shrink-0" />
                                 )}
 
                                 {/* Label */}
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium tracking-[-0.02em] truncate">{option.label}</p>
+                                    <p className="text-[15px] leading-[1.32] font-semibold text-[#ECEFF3] break-words pr-1">{option.label}</p>
                                     {option.sublabel && (
-                                        <p className="text-xs font-medium tracking-[-0.02em] text-[#A2A4A7] truncate">{option.sublabel}</p>
+                                        <p className="mt-1 text-[13px] leading-[1.4] font-medium text-[#A9AFB8] break-words pr-1">{option.sublabel}</p>
                                     )}
                                 </div>
 
                                 {/* Selected Check */}
                                 {selectedId === option.id && (
-                                    <svg className="w-4 h-4 text-[#864AFF] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-4 h-4 text-[#7FA1F0] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                     </svg>
                                 )}
@@ -169,8 +169,8 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                 </div>
 
                 {/* Footer hint */}
-                <div className="px-4 py-2 border-t border-[#27282B] flex items-center justify-between text-xs font-medium tracking-[-0.02em] text-[#A2A4A7]">
-                    <span>↑↓ Navigate</span>
+                <div className="px-4 py-2.5 border-t border-[#27282B] flex items-center justify-between text-xs font-medium text-[#A2A4A7]">
+                    <span>Up/Down navigate</span>
                     <span>ESC to close</span>
                 </div>
             </div>

@@ -62,7 +62,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="p-3 text-center text-xs text-gray-400 border-t border-gray-200">
-        Yena v1.0.34
+        Yena v1.0.35
       </footer>
     </div>
   );
