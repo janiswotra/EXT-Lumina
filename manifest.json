@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Yena Candidate Clipper",
-  "version": "1.0.35",
+  "version": "1.0.36",
   "description": "One-click add to Yena from LinkedIn and Sales Navigator.",
   "icons": {
     "16": "icons/icon-16.png",

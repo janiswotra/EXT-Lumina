@@ -19,6 +19,15 @@ let isProcessingQueue = false;
 // Storage key for the current user ID
 const USER_ID_STORAGE_KEY = 'lumina_user_id';
 
+interface CandidateStatusPayload {
+  sourceUrl: string;
+  sourceUrls?: string[];
+  memberIds?: string[];
+  firstName?: string;
+  lastName?: string;
+  currentCompany?: string;
+}
+
 // Process the queue with delays to prevent detection/throttling
 const processQueue = async () => {
   if (isProcessingQueue || scrapeQueue.length === 0) return;
@@ -200,7 +209,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'CHECK_CANDIDATE_STATUS') {
-      checkCandidateStatus(message.payload.sourceUrl)
+      checkCandidateStatus(message.payload)
         .then(sendResponse)
         .catch((err) => sendResponse({ success: false, message: err.message }));
       return true;
@@ -409,20 +418,31 @@ async function getCurrentUserId(): Promise<string | null> {
 
 /**
  * Normalize LinkedIn URL for consistent matching.
- * Removes query params, hash, trailing slash, and standardizes format.
+ * Removes query params/hash and canonicalizes profile-like paths so
+ * /in/{slug}/recent-activity/* resolves to /in/{slug}.
  */
 function normalizeLinkedInUrl(inputUrl: string): string {
   try {
     const parsed = new URL(inputUrl);
-    // Remove query params and hash
-    let path = parsed.pathname;
-    // Remove trailing slash
-    if (path.endsWith('/')) {
-      path = path.slice(0, -1);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    let canonicalPath = parsed.pathname;
+
+    if (segments[0] === 'in' && segments[1]) {
+      canonicalPath = `/in/${segments[1]}`;
+    } else if (segments[0] === 'sales' && (segments[1] === 'lead' || segments[1] === 'people') && segments[2]) {
+      const token = (segments[2] || '').split(',')[0];
+      canonicalPath = `/sales/${segments[1]}/${token}`;
+    } else if (segments[0] === 'talent' && segments[1] === 'profile' && segments[2]) {
+      canonicalPath = `/talent/profile/${segments[2]}`;
     }
-    return `${parsed.origin}${path}`;
+
+    if (canonicalPath.endsWith('/')) {
+      canonicalPath = canonicalPath.slice(0, -1);
+    }
+
+    return `https://www.linkedin.com${canonicalPath}`;
   } catch {
-    return inputUrl;
+    return (inputUrl || '').trim();
   }
 }
 
@@ -470,7 +490,7 @@ function validateProfileBeforeSave(frontendProfile: any): string | null {
   const fullName = `${firstName} ${lastName}`.trim().toLowerCase();
   const sourceUrl = (frontendProfile?.linkedinUrl || frontendProfile?.sourceUrl || '').trim();
 
-  const hasValidUrl = /^https?:\/\/(www\.)?linkedin\.com\/(in\/|sales\/lead\/|talent\/profile\/)/i.test(sourceUrl);
+  const hasValidUrl = /^https?:\/\/(www\.)?linkedin\.com\/(in\/|sales\/lead\/|sales\/people\/|talent\/profile\/)/i.test(sourceUrl);
   if (!hasValidUrl) {
     return 'Invalid LinkedIn profile URL.';
   }
@@ -503,21 +523,63 @@ function validateProfileBeforeSave(frontendProfile: any): string | null {
 
 /**
  * Checks if candidate exists via /status endpoint.
- * Uses normalized URL to ensure consistent matching regardless of query params.
+ * Sends normalized URL + identity aliases for robust matching.
  */
-async function checkCandidateStatus(sourceUrl: string): Promise<ApiResponse> {
+async function checkCandidateStatus(payload: CandidateStatusPayload | string): Promise<ApiResponse> {
   try {
     const headers = await getHeaders() as any;
     if (!headers['x-api-key']) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    // Normalize the URL to ensure consistent matching
-    const normalizedSourceUrl = normalizeLinkedInUrl(sourceUrl);
-    console.log('[Lumina Background] Checking candidate status for:', normalizedSourceUrl);
+    const sourceUrl = typeof payload === 'string' ? payload : (payload?.sourceUrl || '');
+    const identityBundle = buildLinkedInIdentityBundle(sourceUrl);
+
+    const sourceUrls = new Set<string>([identityBundle.normalizedUrl, ...identityBundle.urls].filter(Boolean));
+    const memberIds = new Set<string>(identityBundle.memberIds);
+
+    if (typeof payload !== 'string') {
+      for (const url of payload.sourceUrls || []) {
+        const normalized = normalizeLinkedInUrl(url);
+        if (normalized) sourceUrls.add(normalized);
+      }
+      for (const memberId of payload.memberIds || []) {
+        if (memberId) memberIds.add(memberId);
+      }
+    }
+
+    const firstName = typeof payload === 'string' ? '' : (payload.firstName || '').trim();
+    const lastName = typeof payload === 'string' ? '' : (payload.lastName || '').trim();
+    const currentCompany = typeof payload === 'string' ? '' : (payload.currentCompany || '').trim();
+
+    console.log('[Lumina Background] Checking candidate status for:', {
+      sourceUrl: identityBundle.normalizedUrl,
+      sourceUrls: Array.from(sourceUrls),
+      memberIds: Array.from(memberIds),
+      firstName,
+      lastName,
+      currentCompany
+    });
 
     const url = new URL(`${API_BASE_URL}/linkedin-status`);
-    url.searchParams.append('sourceUrl', normalizedSourceUrl);
+    url.searchParams.append('sourceUrl', identityBundle.normalizedUrl);
+
+    Array.from(sourceUrls).forEach((value) => {
+      url.searchParams.append('sourceUrls[]', value);
+      url.searchParams.append('sourceUrlVariant', value);
+    });
+
+    Array.from(memberIds).forEach((value) => {
+      url.searchParams.append('memberIds[]', value);
+      url.searchParams.append('memberId', value);
+    });
+
+    if (firstName) url.searchParams.append('firstName', firstName);
+    if (lastName) url.searchParams.append('lastName', lastName);
+    if (currentCompany) {
+      url.searchParams.append('currentCompany', currentCompany);
+      url.searchParams.append('company', currentCompany);
+    }
 
     const response = await fetch(url.toString(), {
       method: 'GET',

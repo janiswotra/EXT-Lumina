@@ -30,6 +30,17 @@ export interface Organization {
   role?: string;
 }
 
+export type ParseConfidenceLevel = 'high' | 'medium' | 'low';
+
+export interface ParseConfidence {
+  overall: ParseConfidenceLevel;
+  headline: ParseConfidenceLevel;
+  location: ParseConfidenceLevel;
+  currentCompany: ParseConfidenceLevel;
+  jobTitle: ParseConfidenceLevel;
+  lowFields: Array<'headline' | 'location' | 'currentCompany' | 'jobTitle'>;
+}
+
 export interface CandidateProfile {
   firstName: string;
   lastName: string;
@@ -49,6 +60,7 @@ export interface CandidateProfile {
   certifications?: Certification[];
   courses?: Course[];
   organizations?: Organization[];
+  parseConfidence?: ParseConfidence;
 }
 
 export interface Job {
@@ -98,12 +110,23 @@ export interface SyncMessagesPayload {
   conversationId: string;
   participantUrl: string;
   participantName: string;
+  participantUrls?: string[];
+  participantMemberIds?: string[];
+}
+
+export interface CheckCandidateStatusPayload {
+  sourceUrl: string;
+  sourceUrls?: string[];
+  memberIds?: string[];
+  firstName?: string;
+  lastName?: string;
+  currentCompany?: string;
 }
 
 export type ExtensionMessage =
   | { type: 'SAVE_CANDIDATE'; payload: SaveCandidatePayload }
   | { type: 'CHECK_AUTH' }
-  | { type: 'CHECK_CANDIDATE_STATUS'; payload: { sourceUrl: string } }
+  | { type: 'CHECK_CANDIDATE_STATUS'; payload: CheckCandidateStatusPayload }
   | { type: 'GET_JOBS' }
   | { type: 'GET_STAGES'; payload?: { jobId: string } }
   | { type: 'GET_LISTS' }

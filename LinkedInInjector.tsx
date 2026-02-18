@@ -4,7 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { Preview } from './components/Preview';
 import { Toast } from './components/Toast';
 import { AuthScreen } from './components/AuthScreen';
-import { ApiResponse } from './types';
+import { ApiResponse, ParseConfidence } from './types';
 
 // Fix: Declare chrome variable to resolve TS error
 declare const chrome: any;
@@ -55,21 +55,236 @@ const safeSendMessage = (message: any): Promise<any> => {
 
 /**
  * Normalize LinkedIn URL for consistent matching.
- * Removes query params, hash, trailing slash, and standardizes format.
+ * Removes query params/hash and canonicalizes profile-like paths so
+ * /in/{slug}/recent-activity/* resolves to /in/{slug}.
  */
 const normalizeLinkedInUrl = (url: string): string => {
   try {
     const parsed = new URL(url);
-    // Remove query params and hash
-    let path = parsed.pathname;
-    // Remove trailing slash
-    if (path.endsWith('/')) {
-      path = path.slice(0, -1);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    let canonicalPath = parsed.pathname;
+
+    if (segments[0] === 'in' && segments[1]) {
+      canonicalPath = `/in/${segments[1]}`;
+    } else if (segments[0] === 'sales' && (segments[1] === 'lead' || segments[1] === 'people') && segments[2]) {
+      const token = (segments[2] || '').split(',')[0];
+      canonicalPath = `/sales/${segments[1]}/${token}`;
+    } else if (segments[0] === 'talent' && segments[1] === 'profile' && segments[2]) {
+      canonicalPath = `/talent/profile/${segments[2]}`;
     }
-    return `${parsed.origin}${path}`;
+
+    if (canonicalPath.endsWith('/')) canonicalPath = canonicalPath.slice(0, -1);
+    return `https://www.linkedin.com${canonicalPath}`;
   } catch {
     return url;
   }
+};
+
+const extractLinkedInMemberId = (url: string): string | null => {
+  const normalized = normalizeLinkedInUrl(url || '');
+
+  const profileMatch = normalized.match(/\/in\/(A[A-Z][a-zA-Z0-9_-]{20,})/);
+  if (profileMatch) return profileMatch[1];
+
+  const salesMatch = normalized.match(/\/sales\/(?:lead|people)\/([^/?#]+)/);
+  if (!salesMatch) return null;
+
+  const token = (salesMatch[1] || '').split(',')[0];
+  if (/^A[A-Z][a-zA-Z0-9_-]{20,}$/.test(token)) return token;
+  return null;
+};
+
+const isProfileUrl = (url: string): boolean => {
+  return url.includes('/in/') || url.includes('/sales/lead/') || url.includes('/sales/people/') || url.includes('/talent/profile/');
+};
+
+const hasMeaningfulProfileSignals = (profile: any): boolean => {
+  const signals = [
+    !!profile?.headline?.trim(),
+    !!profile?.location?.trim(),
+    !!profile?.currentCompany?.trim(),
+    (profile?.about || '').trim().length > 20,
+    Array.isArray(profile?.experiences) && profile.experiences.length > 0,
+    Array.isArray(profile?.educations) && profile.educations.length > 0,
+    Array.isArray(profile?.skills) && profile.skills.length > 0,
+    typeof profile?.profilePictureUrl === 'string' && profile.profilePictureUrl.startsWith('http')
+  ];
+  return signals.filter(Boolean).length >= 2;
+};
+
+const canSaveProfile = (profile: any): { ok: boolean; reason?: string } => {
+  const firstName = (profile?.firstName || '').trim();
+  const lastName = (profile?.lastName || '').trim();
+  const fullName = `${firstName} ${lastName}`.trim().toLowerCase();
+  const linkedinUrl = (profile?.linkedinUrl || '').trim();
+
+  if (!firstName && !lastName) {
+    return { ok: false, reason: 'First Name or Last Name is required.' };
+  }
+
+  if (!isProfileUrl(linkedinUrl)) {
+    return { ok: false, reason: 'This page is not recognized as a LinkedIn profile URL.' };
+  }
+
+  if (!firstName || fullName === 'unknown') {
+    return { ok: false, reason: 'Profile parse looks incomplete. Please wait 2-3 seconds and try again.' };
+  }
+
+  if (!hasMeaningfulProfileSignals(profile)) {
+    return { ok: false, reason: 'Profile data quality is too low to save safely. Scroll the profile and retry.' };
+  }
+
+  return { ok: true };
+};
+
+const isLowConfidenceTopField = (value: string): boolean => {
+  const text = (value || '').trim();
+  if (!text) return true;
+  const lower = text.toLowerCase();
+  const blocked = [
+    'comment',
+    'connection',
+    'follower',
+    'mutual',
+    'contact info',
+    'save in sales navigator',
+    'pending',
+    'show more',
+    'show less',
+    'see all'
+  ];
+  if (blocked.some(token => lower.includes(token))) return true;
+  if (/^\d+\s*(comments?|connections?|followers?)$/i.test(text)) return true;
+  return false;
+};
+
+const sanitizeProfileTopFields = (data: any): any => {
+  const sanitized = { ...data };
+  if (isLowConfidenceTopField(sanitized.currentCompany || '')) sanitized.currentCompany = '';
+  if (isLowConfidenceTopField(sanitized.location || '')) sanitized.location = '';
+  if (isLowConfidenceTopField(sanitized.headline || '')) sanitized.headline = '';
+  return sanitized;
+};
+
+const defaultParseConfidence = (): ParseConfidence => ({
+  overall: 'low',
+  headline: 'low',
+  location: 'low',
+  currentCompany: 'low',
+  jobTitle: 'low',
+  lowFields: ['headline', 'location', 'currentCompany', 'jobTitle']
+});
+
+const looksLikeRoleLine = (text: string): boolean => {
+  if (!text) return false;
+  return /(analyst|associate|manager|director|consultant|partner|officer|president|intern|founder|head|lead|specialist|engineer|developer|advisor|vice president|vp)/i.test(text);
+};
+
+const looksLikeCompanyLine = (text: string): boolean => {
+  if (!text) return false;
+  return /(\binc\.?\b|\bltd\.?\b|\bllc\b|\bgmbh\b|\bag\b|\bgroup\b|\bpartners?\b|\bcapital\b|\bbank\b|\bconsultants?\b|\badvisors?\b|\bholdings?\b)/i.test(text);
+};
+
+const parseHeadlineRole = (headline: string): string => {
+  const clean = (headline || '').trim();
+  const atIndex = clean.toLowerCase().indexOf(' at ');
+  if (atIndex > 0) return clean.slice(0, atIndex).trim();
+  return '';
+};
+
+const deriveParseConfidence = (profile: any): ParseConfidence => {
+  const headline = (profile?.headline || '').trim();
+  const location = (profile?.location || '').trim();
+  const company = (profile?.currentCompany || '').trim();
+  const firstExpTitle = (profile?.experiences?.[0]?.title || '').trim();
+  const headlineRole = parseHeadlineRole(headline);
+
+  const headlineConfidence: ParseConfidence['headline'] =
+    !headline || isLowConfidenceTopField(headline) ? 'low'
+      : (headline.length > 18 ? 'high' : 'medium');
+
+  const locationConfidence: ParseConfidence['location'] =
+    !location || isLowConfidenceTopField(location) ? 'low'
+      : ((/,/.test(location) || /metropolitan area/i.test(location)) ? 'high' : 'medium');
+
+  const companyConfidence: ParseConfidence['currentCompany'] =
+    !company || isLowConfidenceTopField(company) ? 'low'
+      : (looksLikeCompanyLine(company) ? 'high' : 'medium');
+
+  let jobTitleConfidence: ParseConfidence['jobTitle'] = 'low';
+  if (firstExpTitle && !isLowConfidenceTopField(firstExpTitle)) {
+    if (company && firstExpTitle.toLowerCase() === company.toLowerCase()) {
+      jobTitleConfidence = headlineRole && looksLikeRoleLine(headlineRole) ? 'medium' : 'low';
+    } else if (looksLikeRoleLine(firstExpTitle)) {
+      jobTitleConfidence = 'high';
+    } else {
+      jobTitleConfidence = 'medium';
+    }
+  } else if (headlineRole) {
+    jobTitleConfidence = looksLikeRoleLine(headlineRole) ? 'high' : 'medium';
+  }
+
+  const lowFields: ParseConfidence['lowFields'] = [];
+  if (headlineConfidence === 'low') lowFields.push('headline');
+  if (locationConfidence === 'low') lowFields.push('location');
+  if (companyConfidence === 'low') lowFields.push('currentCompany');
+  if (jobTitleConfidence === 'low') lowFields.push('jobTitle');
+
+  const overall: ParseConfidence['overall'] =
+    lowFields.length > 0 ? 'low'
+      : ([headlineConfidence, locationConfidence, companyConfidence, jobTitleConfidence].includes('medium') ? 'medium' : 'high');
+
+  return {
+    overall,
+    headline: headlineConfidence,
+    location: locationConfidence,
+    currentCompany: companyConfidence,
+    jobTitle: jobTitleConfidence,
+    lowFields
+  };
+};
+
+const mergeProfileReliably = (prev: any, next: any, mode: 'prefetch' | 'deep'): any => {
+  const sanitizedNext = sanitizeProfileTopFields(next || {});
+  const pickText = (incoming: string, existing: string) => {
+    const cleanIncoming = (incoming || '').trim();
+    if (!cleanIncoming) return existing || '';
+    if (isLowConfidenceTopField(cleanIncoming)) return existing || '';
+    return cleanIncoming;
+  };
+
+  const result = {
+    ...prev,
+    ...sanitizedNext,
+    firstName: sanitizedNext.firstName || prev.firstName || '',
+    lastName: sanitizedNext.lastName || prev.lastName || '',
+    headline: pickText(sanitizedNext.headline, prev.headline),
+    location: pickText(sanitizedNext.location, prev.location),
+    currentCompany: pickText(sanitizedNext.currentCompany, prev.currentCompany),
+    about: mode === 'deep'
+      ? ((sanitizedNext.about || '').trim() || prev.about || '')
+      : (prev.about || (sanitizedNext.about || '').trim() || ''),
+    experiences: Array.isArray(sanitizedNext.experiences) && sanitizedNext.experiences.length > 0
+      ? sanitizedNext.experiences
+      : (prev.experiences || []),
+    educations: Array.isArray(sanitizedNext.educations) && sanitizedNext.educations.length > 0
+      ? sanitizedNext.educations
+      : (prev.educations || []),
+    skills: Array.isArray(sanitizedNext.skills) && sanitizedNext.skills.length > 0
+      ? sanitizedNext.skills
+      : (prev.skills || [])
+  };
+
+  if (!result.currentCompany && result.experiences?.length > 0) {
+    const firstExpCompany = (result.experiences[0]?.company || '').trim();
+    if (!isLowConfidenceTopField(firstExpCompany)) {
+      result.currentCompany = firstExpCompany;
+    }
+  }
+
+  result.parseConfidence = deriveParseConfidence(result);
+
+  return result;
 };
 
 export const LinkedInInjector: React.FC = () => {
@@ -83,6 +298,7 @@ export const LinkedInInjector: React.FC = () => {
 
   // NEW: Track data fetching state for better UX
   const [isFetchingData, setIsFetchingData] = useState(false);
+  const [, setIsHydratingDeepData] = useState(false);
 
   // Track current URL to detect changes
   const currentUrlRef = useRef(window.location.href);
@@ -113,6 +329,7 @@ export const LinkedInInjector: React.FC = () => {
     certifications: [],
     courses: [],
     organizations: [],
+    parseConfidence: defaultParseConfidence(),
     linkedinUrl: window.location.href,
   });
 
@@ -140,6 +357,7 @@ export const LinkedInInjector: React.FC = () => {
       certifications: [],
       courses: [],
       organizations: [],
+      parseConfidence: defaultParseConfidence(),
       linkedinUrl: window.location.href,
     });
   }, []);
@@ -175,38 +393,6 @@ export const LinkedInInjector: React.FC = () => {
       setAuthStatus('MISSING_KEY');
     }
   };
-
-  // Listen for background requests (e.g. Check for Updates)
-  useEffect(() => {
-    const messageListener = (message: any, sender: any, sendResponse: any) => {
-      if (message.type === 'TRIGGER_SCRAPE') {
-
-        // Background scrape - use scrolling for full data capture
-        // Since this opens in a separate window, scrolling is acceptable
-        waitForProfileToLoad(5000).then((isReady) => {
-          if (!isReady) {
-          }
-          // Enable scrolling (true) for background scrapes to capture all experience items
-          parseProfileWithRetry(3, 250, true).then((data: any) => {
-            chrome.runtime.sendMessage({
-              type: 'PROFILE_DATA_EXTRACTED',
-              data: data
-            });
-          });
-        });
-      }
-    };
-
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-      chrome.runtime.onMessage.addListener(messageListener);
-    }
-
-    return () => {
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-        chrome.runtime.onMessage.removeListener(messageListener);
-      }
-    };
-  }, []);
 
   // URL Change Detection & Initial Load - IMPROVED
   useEffect(() => {
@@ -245,28 +431,48 @@ export const LinkedInInjector: React.FC = () => {
       setIsFetchingData(true);
 
       try {
-        // STEP 1: Parse profile IMMEDIATELY - no waiting (Attio-style instant response)
-        // DOM is ready by the time user clicks, no need to wait
-        const data = parseProfile();
+        // Wait for profile anchors to reduce partial parses on LinkedIn SPA transitions
+        const isReady = await waitForProfileToLoad(5000);
+        const data = isReady
+          ? await parseProfileWithRetry(3, 250, false)
+          : await parseProfileWithRetry(1, 100, false);
         if (!isMounted) return;
 
+        const prefetchData = sanitizeProfileTopFields(data);
         // STEP 2: Update UI immediately with parsed data
         setProfileData((prev: any) => ({
-          ...data,
-          email: data.email || (prev.linkedinUrl === window.location.href ? prev.email : '') || '',
-          phone: data.phone || (prev.linkedinUrl === window.location.href ? prev.phone : '') || '',
+          ...mergeProfileReliably(prev, prefetchData, 'prefetch'),
+          email: prefetchData.email || (prev.linkedinUrl === window.location.href ? prev.email : '') || '',
+          phone: prefetchData.phone || (prev.linkedinUrl === window.location.href ? prev.phone : '') || '',
           linkedinUrl: window.location.href
         }));
 
         // STEP 3: Check if candidate exists in Yena (BACKGROUND - doesn't block display)
         if (data.firstName && data.lastName && data.firstName !== 'Unknown') {
-          const normalizedUrl = normalizeLinkedInUrl(window.location.href);
+          const currentUrl = window.location.href;
+          const normalizedUrl = normalizeLinkedInUrl(currentUrl);
+          const memberId = extractLinkedInMemberId(currentUrl);
+          const sourceUrls = Array.from(
+            new Set(
+              [currentUrl, normalizedUrl, memberId ? `https://www.linkedin.com/in/${memberId}` : '']
+                .filter(Boolean)
+                .map((item) => normalizeLinkedInUrl(item))
+            )
+          );
+
           pendingStatusCheckUrlRef.current = normalizedUrl;
 
           // Fire and forget - doesn't block UI
           safeSendMessage({
             type: 'CHECK_CANDIDATE_STATUS',
-            payload: { sourceUrl: normalizedUrl }
+            payload: {
+              sourceUrl: currentUrl,
+              sourceUrls,
+              memberIds: memberId ? [memberId] : [],
+              firstName: data.firstName || '',
+              lastName: data.lastName || '',
+              currentCompany: data.currentCompany || ''
+            }
           }).then((res: ApiResponse) => {
             const currentNormalizedUrl = normalizeLinkedInUrl(window.location.href);
             const isResponseForCurrentProfile = pendingStatusCheckUrlRef.current === normalizedUrl &&
@@ -336,8 +542,7 @@ export const LinkedInInjector: React.FC = () => {
               return prev; // Return same reference = no re-render
             }
             return {
-              ...prev,
-              ...data,
+              ...mergeProfileReliably(prev, data, 'prefetch'),
               // Preserve contact info
               email: prev.email || data.email || '',
               phone: prev.phone || data.phone || '',
@@ -361,6 +566,40 @@ export const LinkedInInjector: React.FC = () => {
     };
   }, [viewMode, hasScrapedCurrentUrl, resetProfileState]);
 
+  // Deep hydration after user opens full sidebar:
+  // prefer accuracy over speed and update only with reliable values.
+  useEffect(() => {
+    if (viewMode !== 'full') return;
+    let cancelled = false;
+
+    const hydrateDeep = async () => {
+      setIsHydratingDeepData(true);
+      try {
+        const isReady = await waitForProfileToLoad(6000);
+        const deepData = isReady
+          ? await parseProfileWithRetry(4, 300, false)
+          : await parseProfileWithRetry(2, 150, false);
+        if (cancelled) return;
+
+        setProfileData((prev: any) => ({
+          ...mergeProfileReliably(prev, deepData, 'deep'),
+          email: prev.email || deepData.email || '',
+          phone: prev.phone || deepData.phone || '',
+          linkedinUrl: window.location.href
+        }));
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setIsHydratingDeepData(false);
+      }
+    };
+
+    hydrateDeep();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode]);
+
   const handleAddCandidate = () => {
     // Switch to full mode -> this triggers specific scraping poller logic via useEffect
     setLoading(true);
@@ -374,7 +613,7 @@ export const LinkedInInjector: React.FC = () => {
   // Check if current URL is a valid profile page
   const isValidProfilePage = () => {
     const url = window.location.href;
-    return url.includes('/in/') || url.includes('/sales/lead/') || url.includes('/talent/profile/');
+    return url.includes('/in/') || url.includes('/sales/lead/') || url.includes('/sales/people/') || url.includes('/talent/profile/');
   };
 
   const toggleView = () => {
@@ -390,13 +629,14 @@ export const LinkedInInjector: React.FC = () => {
     }
   };
 
-  const handleSave = async (jobId?: string, stageId?: string, listId?: string) => {
+  const handleSave = async (jobId?: string, stageId?: string, listId?: string): Promise<boolean> => {
     setLoading(true);
     setToast(null);
 
     try {
-      if (!profileData.lastName && !profileData.firstName) {
-        throw new Error("First Name or Last Name is required.");
+      const validation = canSaveProfile(profileData);
+      if (!validation.ok) {
+        throw new Error(validation.reason || 'Profile validation failed.');
       }
 
       // Build the payload with optional job, stage, and list
@@ -418,13 +658,16 @@ export const LinkedInInjector: React.FC = () => {
       if (response && response.success) {
         setToast({ msg: 'Candidate saved to Yena!', type: 'success' });
         setTimeout(() => setViewMode('hidden'), 1500);
+        return true;
       } else {
         setToast({ msg: response?.message || 'Failed to save.', type: 'error' });
+        return false;
       }
 
     } catch (e: any) {
       console.error('[Lumina] Save Exception:', e);
       setToast({ msg: e.message || 'Error occurred.', type: 'error' });
+      return false;
     } finally {
       setLoading(false);
     }
@@ -436,7 +679,7 @@ export const LinkedInInjector: React.FC = () => {
       {viewMode === 'hidden' && (
         <button
           onClick={toggleView}
-          className="fixed right-0 top-1/2 transform -translate-y-1/2 z-[2147483647] bg-indigo-600 text-white p-3 rounded-l-2xl shadow-2xl flex items-center gap-2 hover:bg-indigo-700 transition-colors cursor-pointer border-2 border-white pointer-events-auto"
+          className="fixed right-0 top-1/2 transform -translate-y-1/2 z-[2147483647] bg-[#5F86E5] text-white p-3 rounded-l-2xl shadow-2xl flex items-center gap-2 hover:bg-[#4E76D9] transition-colors cursor-pointer border-2 border-white pointer-events-auto"
           title="Add to Yena"
         >
           <img
