@@ -506,7 +506,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                     <h2 className="text-2xl font-semibold text-white mb-3 text-center">Connect to Yena</h2>
                     <p className="text-base text-gray-400 text-center mb-10 max-w-[300px]">
-                        Enter your API Key from Yena Settings to start capturing candidates.
+                        Enter your personal API Key from Yena Settings. Do not share API keys if you want correct ownership attribution.
                     </p>
                     <div className="w-full max-w-[320px] space-y-4">
                         <Input

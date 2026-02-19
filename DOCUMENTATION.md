@@ -252,6 +252,8 @@ Base URL: `https://api.hireyena.com`
 API key stored in `chrome.storage.local` as `lumina_api_key`.
 Format: `lumina_sk_...`
 
+**Important:** Ownership attribution (who "owns" imported contacts/candidates) is derived from the API key's user. Each teammate should use their own personal API key; if multiple people share one key, all imports will be attributed to that one user.
+
 ---
 
 ## Known Limitations

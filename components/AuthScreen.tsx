@@ -78,7 +78,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess, onClose, isCh
                     <>
                         <h2 className="text-lg font-semibold text-[#EEEFF1] tracking-[-0.02em] mb-2 text-center">Authentication Required</h2>
                         <p className="text-sm font-medium tracking-[-0.02em] text-[#A2A4A7] text-center mb-8 max-w-[280px]">
-                            To connect the extension, please enter your personal API Key from the Yena Settings.
+                            Enter your personal API Key from Yena Settings. Do not share API keys if you want correct ownership attribution.
                         </p>
 
                         <div className="w-full space-y-4">
