@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 interface ToastProps {
   message: string;
@@ -7,17 +7,20 @@ interface ToastProps {
 }
 
 export const Toast: React.FC<ToastProps> = ({ message, type = 'success', onClose }) => {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      onClose();
+      onCloseRef.current();
     }, 4000);
     return () => clearTimeout(timer);
-  }, [onClose]);
+  }, []);
 
   const bgClass = type === 'success' ? 'bg-green-900 text-green-100 border-green-700' : 'bg-red-900 text-red-100 border-red-700';
 
   return (
-    <div className={`fixed bottom-5 right-5 z-[9999] flex items-center px-4 py-3 rounded-lg shadow-lg border ${bgClass} transition-all transform animate-fade-in-up`}>
+    <div className={`fixed bottom-5 right-5 z-[2147483647] flex items-center px-4 py-3 rounded-lg shadow-lg border ${bgClass} transition-all transform animate-fade-in-up`}>
       <div className="mr-3 text-xl">
         {type === 'success' ? '✓' : '⚠'}
       </div>

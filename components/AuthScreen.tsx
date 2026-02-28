@@ -2,9 +2,6 @@ import React, { useState } from 'react';
 import { Button } from './Button';
 import { Input } from './ui/Input';
 
-// Fix: Declare chrome for TS
-declare const chrome: any;
-
 interface AuthScreenProps {
     onSuccess: () => void;
     onClose: () => void;
@@ -21,7 +18,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess, onClose, isCh
         setIsConnecting(true);
         setAuthError('');
 
-        chrome.storage.local.set({ lumina_api_key: apiKey.trim() }, () => {
+        chrome.storage.local.set({ yena_api_key: apiKey.trim() }, () => {
             chrome.runtime.sendMessage({ type: 'CHECK_AUTH' }, (response: any) => {
                 setIsConnecting(false);
                 if (response && response.success) {
@@ -81,13 +78,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess, onClose, isCh
                             Enter your personal API Key from Yena Settings. Do not share API keys if you want correct ownership attribution.
                         </p>
 
-                        <div className="w-full space-y-4">
+                        <form className="w-full space-y-4" onSubmit={(e) => { e.preventDefault(); handleConnect(); }}>
                             <Input
                                 label="API Key"
-                                placeholder="lumina_sk_..."
+                                type="password"
+                                placeholder="yena_sk_..."
                                 value={apiKey}
                                 onChange={(e) => setApiKey(e.target.value)}
                                 className="text-center font-mono"
+                                autoComplete="off"
                             />
 
                             {authError && (
@@ -105,7 +104,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess, onClose, isCh
                             >
                                 Connect to Yena
                             </Button>
-                        </div>
+                        </form>
                     </>
                 )}
             </div>

@@ -1,10 +1,5 @@
 import React from 'react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
-}
+import { cn } from '../../utils/cn';
 
 interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
     label?: string;
@@ -13,12 +8,15 @@ interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, '
     endAdornment?: React.ReactNode;
 }
 
+let inputIdCounter = 0;
+
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-    ({ className, label, error, startAdornment, endAdornment, ...props }, ref) => {
+    ({ className, label, error, startAdornment, endAdornment, id, ...props }, ref) => {
+        const inputId = React.useMemo(() => id || `yena-input-${++inputIdCounter}`, [id]);
         return (
             <div className="flex flex-col gap-1 w-full">
                 {label && (
-                    <label className="text-xs font-medium text-[#A2A4A7] tracking-[-0.02em] ml-0.5">
+                    <label htmlFor={inputId} className="text-xs font-medium text-[#A2A4A7] tracking-[-0.02em] ml-0.5">
                         {label}
                     </label>
                 )}
@@ -42,6 +40,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
                     )}
                     <input
                         ref={ref}
+                        id={inputId}
+                        aria-invalid={error || undefined}
                         className={cn(
                             "flex-1 w-full h-full bg-transparent",
                             "text-sm font-medium tracking-[-0.02em] text-[#EEEFF1]",
@@ -69,11 +69,12 @@ interface TextAreaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 }
 
 export const TextArea = React.forwardRef<HTMLTextAreaElement, TextAreaProps>(
-    ({ className, label, error, ...props }, ref) => {
+    ({ className, label, error, id, ...props }, ref) => {
+        const textareaId = React.useMemo(() => id || `yena-textarea-${++inputIdCounter}`, [id]);
         return (
             <div className="flex flex-col gap-1 w-full">
                 {label && (
-                    <label className="text-xs font-medium text-[#A2A4A7] tracking-[-0.02em] ml-0.5">
+                    <label htmlFor={textareaId} className="text-xs font-medium text-[#A2A4A7] tracking-[-0.02em] ml-0.5">
                         {label}
                     </label>
                 )}
@@ -90,6 +91,8 @@ export const TextArea = React.forwardRef<HTMLTextAreaElement, TextAreaProps>(
                 >
                     <textarea
                         ref={ref}
+                        id={textareaId}
+                        aria-invalid={error || undefined}
                         className={cn(
                             "w-full bg-transparent resize-none",
                             "text-sm font-medium tracking-[-0.02em] text-[#EEEFF1]",

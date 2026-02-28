@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-
-// Fix: Declare chrome variable
-declare const chrome: any;
+import { formatTimeAgo } from '../utils/time';
+import { safeSendMessage } from '../utils/chrome';
 
 interface HarvestStatus {
     unsyncedCount: number;
@@ -27,7 +26,7 @@ export const HarvestPanel: React.FC = () => {
     // Fetch harvest status on mount and periodically
     const fetchStatus = useCallback(async () => {
         try {
-            const response = await chrome.runtime.sendMessage({ type: 'GET_HARVEST_STATUS' });
+            const response = await safeSendMessage({ type: 'GET_HARVEST_STATUS' });
             if (response?.success) {
                 setStatus({
                     unsyncedCount: response.data.unsyncedCount || 0,
@@ -35,7 +34,7 @@ export const HarvestPanel: React.FC = () => {
                 });
             }
         } catch (err) {
-            console.error('[HarvestPanel] Error fetching status:', err);
+            console.warn('[Yena HarvestPanel] Error fetching status:', err);
         }
     }, []);
 
@@ -52,7 +51,7 @@ export const HarvestPanel: React.FC = () => {
         setSyncResult(null);
 
         try {
-            const response = await chrome.runtime.sendMessage({ type: 'SYNC_HARVEST' });
+            const response = await safeSendMessage({ type: 'SYNC_HARVEST' });
 
             if (response?.success) {
                 setSyncResult(response.data);
@@ -68,28 +67,13 @@ export const HarvestPanel: React.FC = () => {
         }
     };
 
-    const formatLastSynced = (isoString: string | null): string => {
-        if (!isoString) return 'Never';
-
-        const date = new Date(isoString);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMs / 3600000);
-        const diffDays = Math.floor(diffMs / 86400000);
-
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins} min ago`;
-        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-        return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    };
 
     return (
-        <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-700/50">
+        <div className="bg-gradient-to-br from-amber-900/20 to-orange-900/20 rounded-xl p-4 border border-amber-700/50">
             {/* Header */}
             <div className="flex items-center gap-2 mb-3">
                 <span className="text-xl">🌾</span>
-                <h3 className="font-semibold text-amber-800 dark:text-amber-200">
+                <h3 className="font-semibold text-amber-200">
                     Harvested Profiles
                 </h3>
             </div>
@@ -97,10 +81,10 @@ export const HarvestPanel: React.FC = () => {
             {/* Count */}
             <div className="mb-4">
                 <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-bold text-amber-600 dark:text-amber-400">
+                    <span className="text-3xl font-bold text-amber-400">
                         {status.unsyncedCount}
                     </span>
-                    <span className="text-sm text-amber-700 dark:text-amber-300">
+                    <span className="text-sm text-amber-300">
                         profile{status.unsyncedCount !== 1 ? 's' : ''} ready to sync
                     </span>
                 </div>
@@ -116,7 +100,7 @@ export const HarvestPanel: React.FC = () => {
           flex items-center justify-center gap-2
           ${status.unsyncedCount > 0 && !isSyncing
                         ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-md hover:shadow-lg'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                        : 'bg-gray-700 text-gray-400 cursor-not-allowed'
                     }
         `}
             >
@@ -139,19 +123,19 @@ export const HarvestPanel: React.FC = () => {
             </button>
 
             {/* Last Synced */}
-            <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-3 text-center">
-                Last synced: {formatLastSynced(status.lastSyncedAt)}
+            <p className="text-xs text-amber-400/70 mt-3 text-center">
+                Last synced: {formatTimeAgo(status.lastSyncedAt)}
             </p>
 
             {/* Sync Result */}
             {syncResult && (
-                <div className="mt-3 p-2 bg-green-100 dark:bg-green-900/30 rounded-lg text-xs text-green-700 dark:text-green-300">
+                <div className="mt-3 p-2 bg-green-900/30 rounded-lg text-xs text-green-300">
                     <div className="font-medium mb-1">✓ Sync Complete</div>
                     <div>
                         Imported: {syncResult.imported} | Updated: {syncResult.updated} | Skipped: {syncResult.skipped}
                     </div>
                     {syncResult.errors.length > 0 && (
-                        <div className="text-red-600 dark:text-red-400 mt-1">
+                        <div className="text-red-400 mt-1">
                             Errors: {syncResult.errors.length}
                         </div>
                     )}
@@ -160,13 +144,13 @@ export const HarvestPanel: React.FC = () => {
 
             {/* Error */}
             {error && (
-                <div className="mt-3 p-2 bg-red-100 dark:bg-red-900/30 rounded-lg text-xs text-red-700 dark:text-red-300">
+                <div className="mt-3 p-2 bg-red-900/30 rounded-lg text-xs text-red-300">
                     {error}
                 </div>
             )}
 
             {/* Hint */}
-            <p className="text-xs text-amber-600/60 dark:text-amber-400/60 mt-3 text-center italic">
+            <p className="text-xs text-amber-400/60 mt-3 text-center italic">
                 Profiles are automatically captured when you browse LinkedIn or Sales Navigator
             </p>
         </div>
