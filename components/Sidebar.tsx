@@ -1,14 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from './Button';
-import { Input } from './ui/Input';
 import { PickerModal, PickerOption } from './ui/PickerModal';
 import { CandidateProfile, Job, Stage, List } from '../types';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
-}
+import { cn } from '../utils/cn';
 
 type CandidateData = CandidateProfile;
 
@@ -22,7 +16,6 @@ interface SidebarProps {
     isExisting?: boolean;
 }
 
-declare const chrome: any;
 
 // Info Row Component (Attio-style) - improved layout
 const InfoRow: React.FC<{
@@ -144,12 +137,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     isLoading,
     isExisting = false
 }) => {
-    // Auth State
-    const [authStatus, setAuthStatus] = useState<'CHECKING' | 'AUTHENTICATED' | 'MISSING_KEY'>('CHECKING');
-    const [apiKey, setApiKey] = useState('');
-    const [isConnecting, setIsConnecting] = useState(false);
-    const [authError, setAuthError] = useState('');
-
     // Form Data
     const [formData, setFormData] = useState<CandidateData>(data);
     const [isSuccess, setIsSuccess] = useState(false);
@@ -179,28 +166,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setFormData(data);
     }, [data]);
 
-    useEffect(() => {
-        if (isOpen) {
-            checkAuth();
-        }
-    }, [isOpen]);
-
-    const checkAuth = () => {
-        setAuthStatus('CHECKING');
-        try {
-            chrome.runtime.sendMessage({ type: 'CHECK_AUTH' }, (response: any) => {
-                if (response && response.success) {
-                    setAuthStatus('AUTHENTICATED');
-                } else {
-                    setAuthStatus('MISSING_KEY');
-                }
-            });
-        } catch (e) {
-            console.warn('Extension context not found', e);
-            setAuthStatus('MISSING_KEY');
-        }
-    };
-
     // Cache Helpers
     const CACHE_DURATION = 60 * 60 * 1000; // 1 Hour
 
@@ -221,181 +186,116 @@ export const Sidebar: React.FC<SidebarProps> = ({
         chrome.storage.local.set({ [key]: { data, timestamp: Date.now() } });
     };
 
-    const fetchJobs = useCallback(async (forceRefresh = false): Promise<void> => {
-        setLoadingJobs(true);
-        if (!forceRefresh) {
-            const cached = await getCachedData('lumina_cache_jobs');
-            if (cached) {
-                setJobs(cached);
-                setLoadingJobs(false);
-                return;
-            }
-        }
+    // Generic fetcher that handles caching, loading state, and response format normalization
+    const fetchCachedData = useCallback(<T,>(opts: {
+        messageType: string;
+        payload?: any;
+        cacheKey?: string;
+        dataKey?: string; // e.g. 'jobs', 'stages', 'lists' — for nested response formats
+        setData: (data: T[]) => void;
+        setLoading: (loading: boolean) => void;
+        forceRefresh?: boolean;
+    }): Promise<T[]> => {
+        const { messageType, payload, cacheKey, dataKey, setData, setLoading, forceRefresh = false } = opts;
 
-        try {
-            await new Promise<void>((resolve) => {
-                chrome.runtime.sendMessage({ type: 'GET_JOBS' }, (response: any) => {
-                    setLoadingJobs(false);
-                    if (response && response.success && response.data) {
-                        // Handle various response formats: { jobs: [...] }, [...], or { data: [...] }
-                        let jobsData: Job[] = [];
-                        if (Array.isArray(response.data)) {
-                            jobsData = response.data;
-                        } else if (response.data.jobs && Array.isArray(response.data.jobs)) {
-                            jobsData = response.data.jobs;
-                        } else if (response.data.data && Array.isArray(response.data.data)) {
-                            jobsData = response.data.data;
+        const extractArray = (responseData: any): T[] => {
+            if (Array.isArray(responseData)) return responseData;
+            if (dataKey && responseData[dataKey] && Array.isArray(responseData[dataKey])) return responseData[dataKey];
+            if (responseData.data && Array.isArray(responseData.data)) return responseData.data;
+            return [];
+        };
+
+        setLoading(true);
+
+        return (async () => {
+            if (!forceRefresh && cacheKey) {
+                const cached = await getCachedData(cacheKey);
+                if (cached) {
+                    setData(cached);
+                    setLoading(false);
+                    return cached;
+                }
+            }
+
+            try {
+                const items = await new Promise<T[]>((resolve) => {
+                    const msg = payload ? { type: messageType, payload } : { type: messageType };
+                    chrome.runtime.sendMessage(msg, (response: any) => {
+                        if (response && response.success && response.data) {
+                            const extracted = extractArray(response.data);
+                            resolve(extracted);
+                        } else {
+                            console.warn(`[Yena Sidebar] ${messageType} failed:`, response);
+                            resolve([]);
                         }
-                        setJobs(jobsData);
-                        setCachedData('lumina_cache_jobs', jobsData);
-                    } else {
-                        console.warn('[Yena Sidebar] GET_JOBS failed:', response);
-                    }
-                    resolve();
+                    });
                 });
-            });
-        } catch (e) {
-            setLoadingJobs(false);
-            console.error('[Yena Sidebar] Failed to fetch jobs:', e);
-        }
+                setData(items);
+                if (cacheKey && items.length > 0) setCachedData(cacheKey, items);
+                return items;
+            } catch (e) {
+                console.error(`[Yena Sidebar] Failed to fetch ${messageType}:`, e);
+                return [];
+            } finally {
+                setLoading(false);
+            }
+        })();
     }, []);
 
-    const fetchStages = useCallback(async (forceRefresh = false): Promise<void> => {
-        setLoadingStages(true);
-        if (!forceRefresh) {
-            const cached = await getCachedData('lumina_cache_stages');
-            if (cached) {
-                setStages(cached);
-                setLoadingStages(false);
-                return;
-            }
-        }
+    const fetchJobs = useCallback((forceRefresh = false) =>
+        fetchCachedData<Job>({
+            messageType: 'GET_JOBS', cacheKey: 'yena_cache_jobs', dataKey: 'jobs',
+            setData: setJobs, setLoading: setLoadingJobs, forceRefresh,
+        }),
+    [fetchCachedData]);
 
-        try {
-            await new Promise<void>((resolve) => {
-                chrome.runtime.sendMessage({ type: 'GET_STAGES' }, (response: any) => {
-                    setLoadingStages(false);
-                    if (response && response.success && response.data) {
-                        let stagesData: Stage[] = [];
-                        if (Array.isArray(response.data)) {
-                            stagesData = response.data;
-                        } else if (response.data.stages && Array.isArray(response.data.stages)) {
-                            stagesData = response.data.stages;
-                        } else if (response.data.data && Array.isArray(response.data.data)) {
-                            stagesData = response.data.data;
-                        }
-                        setStages(stagesData);
-                        setCachedData('lumina_cache_stages', stagesData);
-                    } else {
-                        console.warn('[Yena Sidebar] GET_STAGES failed:', response);
-                    }
-                    resolve();
-                });
-            });
-        } catch (e) {
-            setLoadingStages(false);
-            console.error('[Yena Sidebar] Failed to fetch stages:', e);
-        }
-    }, []);
+    const fetchStages = useCallback((forceRefresh = false) =>
+        fetchCachedData<Stage>({
+            messageType: 'GET_STAGES', cacheKey: 'yena_cache_stages', dataKey: 'stages',
+            setData: setStages, setLoading: setLoadingStages, forceRefresh,
+        }),
+    [fetchCachedData]);
 
     const fetchStagesForJob = useCallback(async (jobId: string, resetSelection = true): Promise<void> => {
-        setLoadingStages(true);
-        if (resetSelection) {
+        if (resetSelection) setSelectedStage(null);
+        const stagesData = await fetchCachedData<Stage>({
+            messageType: 'GET_STAGES', payload: { jobId }, dataKey: 'stages',
+            setData: setStages, setLoading: setLoadingStages, forceRefresh: true,
+        });
+        if (stagesData.length > 0) {
+            setSelectedStage((prev) => {
+                if (!resetSelection && prev) {
+                    const matched = stagesData.find((s) => s.id === prev.id);
+                    if (matched) return matched;
+                }
+                return stagesData[0];
+            });
+        } else {
             setSelectedStage(null);
         }
-        try {
-            await new Promise<void>((resolve) => {
-                chrome.runtime.sendMessage({ type: 'GET_STAGES', payload: { jobId } }, (response: any) => {
-                    setLoadingStages(false);
-                    if (response && response.success && response.data) {
-                        let stagesData: Stage[] = [];
-                        if (Array.isArray(response.data)) {
-                            stagesData = response.data;
-                        } else if (response.data.stages && Array.isArray(response.data.stages)) {
-                            stagesData = response.data.stages;
-                        } else if (response.data.data && Array.isArray(response.data.data)) {
-                            stagesData = response.data.data;
-                        }
-                        setStages(stagesData);
-                        // Keep current selection during background refresh, if still present.
-                        if (stagesData.length > 0) {
-                            setSelectedStage((prev) => {
-                                if (!resetSelection && prev) {
-                                    const matchedStage = stagesData.find((stage) => stage.id === prev.id);
-                                    if (matchedStage) {
-                                        return matchedStage;
-                                    }
-                                }
-                                return stagesData[0];
-                            });
-                        } else {
-                            setSelectedStage(null);
-                        }
-                    } else {
-                        console.warn('[Yena Sidebar] GET_STAGES for job failed:', response);
-                        setStages([]);
-                    }
-                    resolve();
-                });
-            });
-        } catch (e) {
-            setLoadingStages(false);
-            setStages([]);
-        }
-    }, []);
+    }, [fetchCachedData]);
 
-    const fetchLists = useCallback(async (forceRefresh = false): Promise<void> => {
-        setLoadingLists(true);
-        if (!forceRefresh) {
-            const cached = await getCachedData('lumina_cache_lists');
-            if (cached) {
-                setLists(cached);
-                setLoadingLists(false);
-                return;
-            }
-        }
-
-        try {
-            await new Promise<void>((resolve) => {
-                chrome.runtime.sendMessage({ type: 'GET_LISTS' }, (response: any) => {
-                    setLoadingLists(false);
-                    if (response && response.success && response.data) {
-                        let listsData: List[] = [];
-                        if (Array.isArray(response.data)) {
-                            listsData = response.data;
-                        } else if (response.data.lists && Array.isArray(response.data.lists)) {
-                            listsData = response.data.lists;
-                        } else if (response.data.data && Array.isArray(response.data.data)) {
-                            listsData = response.data.data;
-                        }
-                        setLists(listsData);
-                        setCachedData('lumina_cache_lists', listsData);
-                    } else {
-                        console.warn('[Yena Sidebar] GET_LISTS failed:', response);
-                    }
-                    resolve();
-                });
-            });
-        } catch (e) {
-            setLoadingLists(false);
-            console.error('[Yena Sidebar] Failed to fetch lists:', e);
-        }
-    }, []);
+    const fetchLists = useCallback((forceRefresh = false) =>
+        fetchCachedData<List>({
+            messageType: 'GET_LISTS', cacheKey: 'yena_cache_lists', dataKey: 'lists',
+            setData: setLists, setLoading: setLoadingLists, forceRefresh,
+        }),
+    [fetchCachedData]);
 
     const loadMetadata = useCallback(async (forceRefresh = true): Promise<void> => {
         await Promise.all([
             fetchJobs(forceRefresh),
             fetchLists(forceRefresh),
-            selectedJob ? fetchStagesForJob(selectedJob.id, false) : fetchStages(forceRefresh)
+            fetchStages(forceRefresh)
         ]);
-    }, [fetchJobs, fetchLists, fetchStages, fetchStagesForJob, selectedJob]);
+    }, [fetchJobs, fetchLists, fetchStages]);
 
-    // Fetch Jobs, Lists, and Stages when authenticated
+    // Fetch Jobs, Lists, and Stages when sidebar opens
     useEffect(() => {
-        if (authStatus === 'AUTHENTICATED') {
+        if (isOpen) {
             void loadMetadata(true);
         }
-    }, [authStatus, loadMetadata]);
+    }, [isOpen, loadMetadata]);
 
     // Fetch Stages when job is selected
     useEffect(() => {
@@ -403,23 +303,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             void fetchStagesForJob(selectedJob.id, true);
         }
     }, [selectedJob, fetchStagesForJob]);
-
-    const handleConnect = () => {
-        if (!apiKey.trim()) return;
-        setIsConnecting(true);
-        setAuthError('');
-
-        chrome.storage.local.set({ lumina_api_key: apiKey.trim() }, () => {
-            chrome.runtime.sendMessage({ type: 'CHECK_AUTH' }, (response: any) => {
-                setIsConnecting(false);
-                if (response && response.success) {
-                    setAuthStatus('AUTHENTICATED');
-                } else {
-                    setAuthError(response?.message || 'Failed to connect. Please check your key.');
-                }
-            });
-        });
-    };
 
     const handleChange = (field: keyof CandidateData, value: string) => {
         const updated: CandidateData = { ...formData, [field]: value };
@@ -476,67 +359,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     if (!isOpen) return null;
 
-    // --- RENDER: Auth Screen ---
-    if (authStatus === 'MISSING_KEY' || authStatus === 'CHECKING') {
-        return (
-            <div className="fixed right-0 top-0 h-full w-[min(520px,92vw)] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
-                {/* Header */}
-                <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <img
-                            src={chrome.runtime.getURL('icons/icon-32.png')}
-                            alt="Yena"
-                            className="w-8 h-8 object-contain"
-                        />
-                        <span className="font-semibold text-lg text-white">Yena</span>
-                    </div>
-                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-
-                {/* Auth Content */}
-                <div className="flex-1 flex flex-col items-center justify-center p-8">
-                    <div className="w-20 h-20 rounded-2xl bg-[#5F86E5]/12 border border-[#7FA1F0]/25 flex items-center justify-center mb-8">
-                        <svg className="w-10 h-10 text-[#7FA1F0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                        </svg>
-                    </div>
-                    <h2 className="text-2xl font-semibold text-white mb-3 text-center">Connect to Yena</h2>
-                    <p className="text-base text-gray-400 text-center mb-10 max-w-[300px]">
-                        Enter your personal API Key from Yena Settings. Do not share API keys if you want correct ownership attribution.
-                    </p>
-                    <div className="w-full max-w-[320px] space-y-4">
-                        <Input
-                            label="API Key"
-                            placeholder="lumina_sk_..."
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            className="text-center font-mono"
-                        />
-                        {authError && (
-                            <p className="text-sm text-red-400 text-center bg-red-500/10 py-3 px-4 rounded-xl border border-red-500/20">
-                                {authError}
-                            </p>
-                        )}
-                        <Button
-                            size="lg"
-                            variant="primary"
-                            onClick={handleConnect}
-                            isLoading={isConnecting || authStatus === 'CHECKING'}
-                            className="w-full py-4 text-base"
-                        >
-                            {authStatus === 'CHECKING' ? 'Connecting...' : 'Connect to Yena'}
-                        </Button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // --- RENDER: Authenticated Sidebar ---
+    // --- RENDER: Sidebar ---
     return (
         <div className="fixed right-0 top-0 h-full w-[min(520px,92vw)] bg-[#111113] text-white shadow-2xl flex flex-col font-sans border-l border-white/10 z-[2147483647] pointer-events-auto overflow-hidden">
 
@@ -807,8 +630,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </CollapsibleSection>
                     )}
 
-                    {/* Harvest Queue Section - DISABLED: Feature not synced with main app yet */}
-                    {/* <HarvestQueueSection variant="full" /> */}
                 </div>
             </div>
 

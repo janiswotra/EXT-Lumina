@@ -1,10 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: any[]) {
-    return twMerge(clsx(inputs));
-}
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { cn } from '../../utils/cn';
 
 export interface PickerOption {
     id: string;
@@ -39,7 +34,6 @@ export const PickerModal: React.FC<PickerModalProps> = ({
 }) => {
     const [search, setSearch] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
-    const listRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (isOpen && inputRef.current) {
@@ -61,16 +55,16 @@ export const PickerModal: React.FC<PickerModalProps> = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose]);
 
-    if (!isOpen) return null;
-
-    const filteredOptions = options.filter(opt =>
+    const filteredOptions = useMemo(() => options.filter(opt =>
         opt.label.toLowerCase().includes(search.toLowerCase()) ||
         opt.sublabel?.toLowerCase().includes(search.toLowerCase())
-    );
+    ), [options, search]);
+
+    if (!isOpen) return null;
 
 
     return (
-        <div className="absolute inset-0 z-50 flex flex-col pointer-events-auto">
+        <div className="absolute inset-0 z-50 flex flex-col pointer-events-auto" role="dialog" aria-modal="true" aria-label={title}>
             {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -110,7 +104,7 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                 </div>
 
                 {/* Options List */}
-                <div ref={listRef} className="flex-1 overflow-y-auto p-3 space-y-2">
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
                     {isLoading ? (
                         <div className="flex items-center justify-center py-8">
                             <svg className="animate-spin w-5 h-5 text-[#A2A4A7]" fill="none" viewBox="0 0 24 24">
@@ -169,8 +163,7 @@ export const PickerModal: React.FC<PickerModalProps> = ({
                 </div>
 
                 {/* Footer hint */}
-                <div className="px-4 py-2.5 border-t border-[#27282B] flex items-center justify-between text-xs font-medium text-[#A2A4A7]">
-                    <span>Up/Down navigate</span>
+                <div className="px-4 py-2.5 border-t border-[#27282B] flex items-center justify-end text-xs font-medium text-[#A2A4A7]">
                     <span>ESC to close</span>
                 </div>
             </div>

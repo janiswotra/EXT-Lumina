@@ -1,17 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { Button } from './components/Button';
+import React from 'react';
 import { APP_DOMAIN } from './constants';
 
-// Fix: Declare chrome variable to resolve TS error
-declare const chrome: any;
-
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    setIsAuthenticated(true);
-  }, []);
-
   const openDashboard = () => {
     if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
       chrome.tabs.create({ url: APP_DOMAIN });
@@ -62,7 +52,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="p-3 text-center text-xs text-gray-400 border-t border-gray-200">
-        Yena v1.0.35
+        Yena v{typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest().version : ''}
       </footer>
     </div>
   );

@@ -1,12 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
-}
-
-declare const chrome: any;
+import { cn } from '../utils/cn';
+import { formatTimeAgo } from '../utils/time';
+import { safeSendMessage } from '../utils/chrome';
 
 interface HarvestedProfilePreview {
     linkedinUrl: string;
@@ -35,9 +30,7 @@ export const HarvestQueueSection: React.FC<HarvestQueueSectionProps> = ({
 
     const fetchQueue = useCallback(async () => {
         try {
-            const response = await new Promise<any>((resolve) => {
-                chrome.runtime.sendMessage({ type: 'GET_HARVEST_QUEUE' }, resolve);
-            });
+            const response = await safeSendMessage({ type: 'GET_HARVEST_QUEUE' });
 
             if (response?.success && response?.data) {
                 const queue = response.data;
@@ -77,9 +70,7 @@ export const HarvestQueueSection: React.FC<HarvestQueueSectionProps> = ({
         setSyncResult(null);
 
         try {
-            const response = await new Promise<any>((resolve) => {
-                chrome.runtime.sendMessage({ type: 'SYNC_HARVEST' }, resolve);
-            });
+            const response = await safeSendMessage({ type: 'SYNC_HARVEST' });
 
             if (response?.success) {
                 setSyncResult({
@@ -101,18 +92,6 @@ export const HarvestQueueSection: React.FC<HarvestQueueSectionProps> = ({
         }
     };
 
-    const formatTimeAgo = (isoString: string): string => {
-        const date = new Date(isoString);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMs / 3600000);
-
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        return `${Math.floor(diffHours / 24)}d ago`;
-    };
 
     // Compact variant - just a subtle indicator
     if (variant === 'compact') {

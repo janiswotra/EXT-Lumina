@@ -1,15 +1,30 @@
-export const API_BASE_URL = 'https://lcvfhchrueipjtoudxit.supabase.co/functions/v1';
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjdmZoY2hydWVpcGp0b3VkeGl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxNzkyNDEsImV4cCI6MjA4Mzc1NTI0MX0.p2paiXI8pXH31fkkNK644greiI-TJRSqXNyInSRoJZI';
-export const APP_DOMAIN = 'https://app.yena.ai';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
+export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+export const APP_DOMAIN = import.meta.env.VITE_APP_DOMAIN as string;
 
-// LinkedIn Selectors (Note: These are heuristic based as LI classes are obfuscated)
-export const SELECTORS = {
-  NAME_HEADING: 'h1.text-heading-xlarge', // Often the name
-  HEADLINE: 'div.text-body-medium.break-words',
-  LOCATION: 'span.text-body-small.inline.t-black--light.break-words',
-  ABOUT_SECTION: '#about',
-  EXPERIENCE_SECTION: '#experience',
-  EDUCATION_SECTION: '#education',
-  // The container where we want to inject our button (The action bar below profile pic)
-  ACTION_BAR: '.ph5 .pv-top-card-v2-ctas',
-};
+// Centralized storage keys (yena_ prefix)
+export const STORAGE_KEYS = {
+  API_KEY: 'yena_api_key',
+  USER_ID: 'yena_user_id',
+  CACHE_JOBS: 'yena_cache_jobs',
+  CACHE_STAGES: 'yena_cache_stages',
+  CACHE_LISTS: 'yena_cache_lists',
+} as const;
+
+// Legacy storage keys for migration
+export const LEGACY_STORAGE_KEYS = {
+  API_KEY: 'lumina_api_key',
+  USER_ID: 'lumina_user_id',
+  CACHE_JOBS: 'lumina_cache_jobs',
+  CACHE_STAGES: 'lumina_cache_stages',
+  CACHE_LISTS: 'lumina_cache_lists',
+} as const;
+
+// DOM element IDs
+export const DOM_IDS = {
+  EXTENSION_MOUNT: 'yena-extension-mount',
+  EXTENSION_INSTALLED: 'yena-extension-installed',
+  LEGACY_EXTENSION_INSTALLED: 'lumina-extension-installed',
+  MESSAGES_MOUNT: 'yena-messages-mount',
+  ROOT: 'yena-root',
+} as const;
