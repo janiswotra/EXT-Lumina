@@ -6,34 +6,39 @@ export { parseProfile } from './regular';
 import { CandidateProfile } from '../../types';
 import { triggerLazyLoading } from './shared';
 import { parseProfile } from './regular';
+import { fetchVoyagerProfile } from '../voyagerApi';
 
 /**
- * Attempts to parse profile with minimal retry logic.
- * Optimized for speed - single attempt for user-initiated actions.
- *
- * @param maxRetries - Number of retry attempts (default 1 for instant response)
- * @param delayMs - Delay between retries if needed (default 100ms)
- * @param enableScrolling - If true, scrolls the page to trigger lazy loading.
- *                          Use ONLY for background/headless scrapes.
+ * Attempts to parse profile using Voyager API first (reliable structured data),
+ * then falls back to DOM parsing if the API is unavailable.
  */
 export const parseProfileWithRetry = async (
   maxRetries: number = 1,
   delayMs: number = 100,
   enableScrolling: boolean = false
 ): Promise<CandidateProfile> => {
-  // Only trigger lazy loading if explicitly enabled (background scrapes only)
+  // Strategy 1: Voyager API (fast, reliable, structured JSON)
+  try {
+    const voyagerResult = await fetchVoyagerProfile();
+    if (voyagerResult && voyagerResult.firstName && voyagerResult.firstName !== 'Unknown') {
+      console.log('[Yena] Profile loaded via Voyager API');
+      return voyagerResult;
+    }
+  } catch (err) {
+    console.warn('[Yena] Voyager API failed, falling back to DOM parsing:', err);
+  }
+
+  // Strategy 2: DOM parsing fallback
   if (enableScrolling) {
     await triggerLazyLoading();
   }
 
   let lastResult = parseProfile();
 
-  // Return immediately if we got valid data (fast path)
   if (lastResult.firstName && lastResult.firstName !== 'Unknown') {
     return lastResult;
   }
 
-  // Only retry if first attempt failed and retries requested
   for (let i = 1; i < maxRetries; i++) {
     await new Promise(resolve => setTimeout(resolve, delayMs));
     lastResult = parseProfile();

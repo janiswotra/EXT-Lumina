@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Attio Reset Layer */
+/* Yena Light Theme Reset Layer */
 @layer base {
   *, ::before, ::after {
     box-sizing: border-box;
@@ -19,8 +19,8 @@
     font-weight: 500;
     letter-spacing: -0.02em;
     line-height: 1.5;
-    color: #EEEFF1;
-    background-color: #09090b;
+    color: #181c25;
+    background-color: #f7f8fa;
     margin: 0;
   }
 
@@ -44,33 +44,33 @@
 
   /* Focus styles */
   :focus-visible {
-    outline: #864AFF solid 1px;
+    outline: #ff6a26 solid 1px;
     outline-offset: 1px;
   }
 }
 
-/* Attio Component Classes */
+/* Yena Component Classes */
 @layer components {
   /* Ghost button hover */
   .attio-ghost-hover {
     @apply transition-colors duration-80;
   }
   .attio-ghost-hover:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: rgba(0, 0, 0, 0.04);
   }
 
-  /* Attio Text Styles */
+  /* Text Styles */
   .text-attio-primary {
-    @apply text-[#EEEFF1] font-medium tracking-attio;
+    @apply text-[#181c25] font-medium tracking-attio;
   }
   .text-attio-secondary {
-    @apply text-[#A2A4A7] font-medium tracking-attio;
+    @apply text-[#4a5364] font-medium tracking-attio;
   }
   .text-attio-tertiary {
-    @apply text-white/55 font-medium tracking-attio;
+    @apply text-[#687182] font-medium tracking-attio;
   }
 
-  /* Attio Surface */
+  /* Surface */
   .attio-surface {
     @apply bg-attio-bg-surface shadow-attio-inset rounded-attio-lg;
   }
@@ -78,44 +78,44 @@
     @apply bg-attio-bg-hover shadow-attio-inset-hover;
   }
 
-  /* Attio Card */
+  /* Card */
   .attio-card {
     @apply bg-attio-bg-elevated shadow-attio-popup rounded-attio-lg;
   }
 
-  /* Attio Input */
+  /* Input */
   .attio-input {
-    @apply bg-transparent shadow-attio-inset rounded-attio 
+    @apply bg-transparent shadow-attio-inset rounded-attio
            text-attio-text-primary placeholder:text-attio-text-quaternary
            transition-shadow duration-140
            focus:shadow-attio-inset-focus focus:outline-none
            hover:shadow-attio-inset-hover;
   }
 
-  /* Attio Button Base */
+  /* Button Base */
   .attio-btn-base {
-    @apply inline-flex items-center justify-center gap-1.5 
-           font-medium tracking-attio text-sm
+    @apply inline-flex items-center justify-center gap-1.5
+           font-medium tracking-attio text-base
            transition-all duration-200
-           focus:outline-none focus-visible:outline focus-visible:outline-[#864AFF] focus-visible:outline-offset-1
+           focus:outline-none focus-visible:outline focus-visible:outline-[#ff6a26] focus-visible:outline-offset-1
            disabled:opacity-40 disabled:cursor-not-allowed
            active:scale-[0.98];
   }
 
-  /* Attio Button Variants */
+  /* Button Variants */
   .attio-btn-primary {
-    @apply attio-btn-base bg-attio-accent text-white shadow-attio-btn-accent
-           hover:bg-attio-accent-hover;
+    @apply attio-btn-base bg-[#2563eb] text-white shadow-attio-btn-accent
+           hover:bg-[#3b82f6];
   }
 
   .attio-btn-secondary {
-    @apply attio-btn-base bg-attio-bg-surface text-attio-text-primary shadow-attio-btn
+    @apply attio-btn-base bg-white text-attio-text-primary shadow-attio-btn
            hover:bg-attio-bg-hover;
   }
 
   .attio-btn-ghost {
     @apply attio-btn-base bg-transparent text-attio-text-secondary
-           hover:bg-white/5 hover:text-attio-text-primary;
+           hover:bg-black/[0.04] hover:text-attio-text-primary;
   }
 
   .attio-btn-danger {
@@ -123,13 +123,13 @@
            hover:bg-attio-error-hover;
   }
 
-  /* Attio Tag/Chip */
+  /* Tag/Chip */
   .attio-tag {
     @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md
-           text-xs font-medium tracking-attio;
+           text-sm font-medium tracking-attio;
   }
 
-  /* Attio Separator */
+  /* Separator */
   .attio-separator {
     @apply h-px w-full bg-attio-border-subtle;
   }
@@ -152,15 +152,15 @@
     }
   }
 
-  /* Shimmer loading effect */
+  /* Shimmer loading effect (light) */
   .animate-shimmer {
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(238, 239, 241, 0.03) 20%,
+      rgba(0, 0, 0, 0.04) 20%,
       transparent 40%,
       transparent 100%
-    ) 100% 0 / 200% 100% no-repeat rgba(238, 239, 241, 0.05);
+    ) 100% 0 / 200% 100% no-repeat rgba(0, 0, 0, 0.03);
     animation: shimmer 1.5s ease infinite;
   }
 

@@ -9,7 +9,7 @@ interface PreviewProps {
     isFetching?: boolean;
 }
 
-// Attio-style info row component - improved for readability
+// Info row component - light theme
 const InfoRow: React.FC<{
     icon: React.ReactNode;
     label: string;
@@ -18,11 +18,11 @@ const InfoRow: React.FC<{
     href?: string;
 }> = ({ icon, label, value, isLink, href }) => (
     <div className="flex items-start gap-3 py-2.5 group">
-        <div className="w-5 h-5 flex items-center justify-center text-[#6B7280] shrink-0 mt-0.5">
+        <div className="w-5 h-5 flex items-center justify-center text-[#687182] shrink-0 mt-0.5">
             {icon}
         </div>
         <div className="flex-1 min-w-0">
-            <span className="text-xs font-medium tracking-[-0.01em] text-[#6B7280] uppercase block mb-1">
+            <span className="text-sm font-medium tracking-[-0.01em] text-[#687182] uppercase block mb-1">
                 {label}
             </span>
             {isLink ? (
@@ -30,12 +30,12 @@ const InfoRow: React.FC<{
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] hover:text-[#864AFF] hover:underline underline-offset-2 block break-words"
+                    className="text-base font-medium tracking-[-0.02em] text-[#181c25] hover:text-[#2563eb] hover:underline underline-offset-2 block break-words"
                 >
                     {value}
                 </a>
             ) : typeof value === 'string' ? (
-                <span className="text-sm font-medium tracking-[-0.02em] text-[#EEEFF1] block break-words leading-relaxed">
+                <span className="text-base font-medium tracking-[-0.02em] text-[#181c25] block break-words leading-relaxed">
                     {value}
                 </span>
             ) : (
@@ -45,28 +45,28 @@ const InfoRow: React.FC<{
     </div>
 );
 
-// Attio-style company tag
+// Company tag - light theme
 const CompanyTag: React.FC<{ name: string; logoUrl?: string }> = ({ name, logoUrl }) => (
-    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#1D2E55] shadow-[inset_0px_0px_0px_1px_rgb(43,62,109)]">
+    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#eff6ff] border border-[#bfdbfe]">
         {logoUrl ? (
             <img src={logoUrl} alt="" className="w-4 h-4 rounded-sm object-cover" />
         ) : (
-            <div className="w-4 h-4 rounded-sm bg-[#266DF0]/30 flex items-center justify-center">
-                <svg className="w-2.5 h-2.5 text-[#C2D6FF]" fill="currentColor" viewBox="0 0 20 20">
+            <div className="w-4 h-4 rounded-sm bg-[#2563eb]/20 flex items-center justify-center">
+                <svg className="w-2.5 h-2.5 text-[#1e40af]" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h-2V5zm2 4h-2v2h2V9z" clipRule="evenodd" />
                 </svg>
             </div>
         )}
-        <span className="text-sm font-medium tracking-[-0.02em] text-[#C2D6FF]">{name}</span>
+        <span className="text-base font-medium tracking-[-0.02em] text-[#1e40af]">{name}</span>
     </div>
 );
 
 // Skeleton row for loading state
 const SkeletonRow: React.FC = () => (
     <div className="flex items-center gap-3 py-2.5">
-        <div className="w-5 h-5 rounded bg-white/5 animate-shimmer shrink-0" />
-        <div className="w-[90px] h-4 rounded bg-white/5 animate-shimmer shrink-0" />
-        <div className="flex-1 h-4 rounded bg-white/5 animate-shimmer" />
+        <div className="w-5 h-5 rounded bg-black/[0.04] animate-shimmer shrink-0" />
+        <div className="w-[90px] h-4 rounded bg-black/[0.04] animate-shimmer shrink-0" />
+        <div className="flex-1 h-4 rounded bg-black/[0.04] animate-shimmer" />
     </div>
 );
 
@@ -80,28 +80,30 @@ export const Preview: React.FC<PreviewProps> = ({
     const showSkeleton = isFetching || (!data.firstName && !data.lastName);
 
     return (
-        <div className="fixed right-5 top-16 w-[420px] bg-[#1A1D21] rounded-xl shadow-[rgb(47,48,51)_0px_0px_0px_1px_inset,rgba(0,0,0,0.16)_0px_0px_0px_1px,rgba(0,0,0,0.48)_0px_4px_8px_-4px,rgba(0,0,0,0.64)_0px_4px_12px_-2px] overflow-hidden font-sans z-[2147483647] pointer-events-auto animate-fade-in-up">
+        <div className="fixed right-5 top-16 w-[420px] bg-white rounded-xl shadow-[0px_0px_0px_1px_#dde1e8,0px_4px_6px_-1px_rgba(0,0,0,0.1),0px_2px_4px_-2px_rgba(0,0,0,0.1)] overflow-hidden font-sans z-[2147483647] pointer-events-auto animate-fade-in-up">
 
             {/* Header with Yena branding */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#27282B]">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#e8ebf1]">
                 <div className="flex items-center gap-2">
-                    <img
-                        src={chrome.runtime.getURL('icons/icon-32.png')}
-                        alt="Yena"
-                        className="w-5 h-5 object-contain"
-                    />
-                    <span className="text-sm font-semibold tracking-[-0.02em] text-[#EEEFF1]">Yena</span>
+                    <div className="w-7 h-7 rounded-lg bg-[#ff6a26] flex items-center justify-center shadow-sm">
+                        <img
+                            src={chrome.runtime.getURL('icons/icon-32.png')}
+                            alt="Yena"
+                            className="w-4 h-4 object-contain"
+                        />
+                    </div>
+                    <span className="text-base font-semibold tracking-[-0.02em] text-[#181c25]">Yena</span>
                 </div>
             </div>
 
             {/* Status Badge */}
             <div className="flex justify-center py-4">
                 {showSkeleton ? (
-                    <div className="h-5 w-32 rounded-full bg-white/5 animate-shimmer" />
+                    <div className="h-5 w-32 rounded-full bg-black/[0.04] animate-shimmer" />
                 ) : (
-                    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium tracking-[-0.02em] ${isExisting
-                        ? 'bg-[#1D4034] shadow-[inset_0px_0px_0px_1px_rgb(36,74,58)] text-[#A7F2CF]'
-                        : 'bg-[#4E1B30] shadow-[inset_0px_0px_0px_1px_rgb(100,38,64)] text-[#FFBFDA]'
+                    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium tracking-[-0.02em] ${isExisting
+                        ? 'bg-[#ecfdf5] border border-[#a7f3d0] text-[#065f46]'
+                        : 'bg-[#fdf2f8] border border-[#fbcfe8] text-[#9d174d]'
                         }`}>
                         {isExisting ? (
                             <>
@@ -124,13 +126,13 @@ export const Preview: React.FC<PreviewProps> = ({
 
             {/* Avatar */}
             <div className="flex justify-center pb-4">
-                <div className={`w-16 h-16 rounded-2xl overflow-hidden shadow-[inset_0px_0px_0px_1px_#27282B] ${showSkeleton ? 'animate-shimmer bg-white/5' : 'bg-[#27282B]'}`}>
+                <div className={`w-16 h-16 rounded-2xl overflow-hidden border border-[#e8ebf1] ${showSkeleton ? 'animate-shimmer bg-black/[0.04]' : 'bg-[#f5f7fa]'}`}>
                     {!showSkeleton && (
                         data.profilePictureUrl ? (
                             <img src={data.profilePictureUrl} alt="" className="w-full h-full object-cover" />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center">
-                                <span className="text-xl font-semibold text-[#EEEFF1]">
+                                <span className="text-2xl font-semibold text-[#181c25]">
                                     {data.firstName?.[0]}{data.lastName?.[0]}
                                 </span>
                             </div>
@@ -143,15 +145,15 @@ export const Preview: React.FC<PreviewProps> = ({
             <div className="text-center px-4 pb-4">
                 {showSkeleton ? (
                     <div className="flex flex-col items-center gap-2">
-                        <div className="h-6 w-40 rounded bg-white/5 animate-shimmer" />
+                        <div className="h-6 w-40 rounded bg-black/[0.04] animate-shimmer" />
                     </div>
                 ) : (
                     <div className="flex items-center justify-center gap-2">
-                        <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#EEEFF1]">
+                        <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#181c25]">
                             {data.firstName} {data.lastName}
                         </h2>
                         {data.connectionDegree && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#266DF0]/10 border border-[#266DF0]/20 text-xs font-medium text-[#C2D6FF]">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#eff6ff] border border-[#bfdbfe] text-sm font-medium text-[#1e40af]">
                                 {data.connectionDegree}
                             </span>
                         )}
@@ -160,7 +162,7 @@ export const Preview: React.FC<PreviewProps> = ({
             </div>
 
             {/* Separator */}
-            <div className="h-px bg-[#27282B] mx-4" />
+            <div className="h-px bg-[#e8ebf1] mx-4" />
 
             {/* Info Rows */}
             <div className="px-4 py-2">
@@ -239,9 +241,9 @@ export const Preview: React.FC<PreviewProps> = ({
                 <button
                     onClick={onAdd}
                     disabled={isLoading || showSkeleton}
-                    className={`w-full h-[36px] rounded-lg text-sm font-semibold tracking-[-0.02em] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] ${isExisting
-                        ? 'bg-[#1A1D21] text-[#EEEFF1] shadow-[inset_0px_0px_0px_1px_#2F3033] hover:bg-[#27282B]'
-                        : 'bg-[#266DF0] text-white shadow-[inset_0px_0px_0px_1px_rgba(255,255,255,0.1)] hover:bg-[#3B7DF5]'
+                    className={`w-full h-[40px] rounded-lg text-base font-semibold tracking-[-0.02em] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] ${isExisting
+                        ? 'bg-white text-[#181c25] shadow-[0px_1px_2px_rgba(0,0,0,0.05),inset_0px_0px_0px_1px_#dde1e8] hover:bg-[#f5f7fa]'
+                        : 'bg-[#ff6a26] text-white shadow-[0px_1px_3px_rgba(255,106,38,0.2),0px_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#e85814]'
                         }`}
                 >
                     {isLoading ? (

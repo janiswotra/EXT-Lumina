@@ -17,14 +17,16 @@ export const Toast: React.FC<ToastProps> = ({ message, type = 'success', onClose
     return () => clearTimeout(timer);
   }, []);
 
-  const bgClass = type === 'success' ? 'bg-green-900 text-green-100 border-green-700' : 'bg-red-900 text-red-100 border-red-700';
+  const bgClass = type === 'success'
+    ? 'bg-[#ecfdf5] text-[#065f46] border-[#a7f3d0]'
+    : 'bg-[#fef2f2] text-[#991b1b] border-[#fecaca]';
 
   return (
     <div className={`fixed bottom-5 right-5 z-[2147483647] flex items-center px-4 py-3 rounded-lg shadow-lg border ${bgClass} transition-all transform animate-fade-in-up`}>
       <div className="mr-3 text-xl">
         {type === 'success' ? '✓' : '⚠'}
       </div>
-      <div className="font-medium text-sm">{message}</div>
+      <div className="font-medium text-base">{message}</div>
       <button onClick={onClose} className="ml-4 hover:opacity-75">
         ✕
       </button>

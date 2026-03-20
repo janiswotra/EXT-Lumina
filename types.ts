@@ -60,6 +60,7 @@ export interface CandidateProfile {
   certifications?: Certification[];
   courses?: Course[];
   organizations?: Organization[];
+  recommendations?: string[];
   parseConfidence?: ParseConfidence;
 }
 

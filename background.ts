@@ -697,6 +697,7 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
         certifications: frontendProfile.certifications || [],
         courses: frontendProfile.courses || [],
         organizations: frontendProfile.organizations || [],
+        recommendations: frontendProfile.recommendations || [],
         linkedinIdentifiers: {
           normalizedUrl: identityBundle.normalizedUrl,
           urls: identityBundle.urls,

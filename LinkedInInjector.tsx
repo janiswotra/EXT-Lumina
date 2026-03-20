@@ -183,7 +183,10 @@ const mergeProfileReliably = (prev: any, next: any, mode: 'prefetch' | 'deep'): 
       : (prev.courses || []),
     organizations: Array.isArray(sanitizedNext.organizations) && sanitizedNext.organizations.length > 0
       ? sanitizedNext.organizations
-      : (prev.organizations || [])
+      : (prev.organizations || []),
+    recommendations: Array.isArray(sanitizedNext.recommendations) && sanitizedNext.recommendations.length > 0
+      ? sanitizedNext.recommendations
+      : (prev.recommendations || [])
   };
 
   if (!result.currentCompany && result.experiences?.length > 0) {
@@ -589,21 +592,46 @@ export const LinkedInInjector: React.FC = () => {
 
   return (
     <>
-      {/* Floating Action Button Trigger */}
+      {/* Sticky Icon Trigger — offset from right edge */}
       {viewMode === 'hidden' && (
         <button
           onClick={toggleView}
-          className="fixed right-0 top-1/2 transform -translate-y-1/2 z-[2147483647] bg-[#5F86E5] text-white p-3 rounded-l-2xl shadow-2xl flex items-center gap-2 hover:bg-[#4E76D9] transition-colors cursor-pointer border-2 border-white pointer-events-auto"
+          style={{
+            position: 'fixed',
+            right: '12px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 2147483647,
+            width: '38px',
+            height: '38px',
+            borderRadius: '11px',
+            backgroundColor: '#ff6a26',
+            boxShadow: '0 2px 12px rgba(255,106,38,0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            pointerEvents: 'auto',
+            border: 'none',
+            padding: 0,
+            outline: 'none',
+            transition: 'box-shadow 0.2s, transform 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.boxShadow = '0 4px 20px rgba(255,106,38,0.5)';
+            e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.boxShadow = '0 2px 12px rgba(255,106,38,0.4)';
+            e.currentTarget.style.transform = 'translateY(-50%)';
+          }}
           title="Add to Yena"
         >
           <img
             src={chrome.runtime.getURL('icons/icon-32.png')}
             alt="Yena"
-            className="w-5 h-5 object-contain"
+            style={{ width: '22px', height: '22px', objectFit: 'contain' }}
           />
-          <span className="font-bold whitespace-nowrap">
-            Yena
-          </span>
         </button>
       )}
 
@@ -631,7 +659,7 @@ export const LinkedInInjector: React.FC = () => {
               />
               <button
                 onClick={() => setViewMode('hidden')}
-                className="fixed right-5 top-[350px] text-xs text-gray-400 hover:text-white underline z-[2147483647] pointer-events-auto bg-black/50 px-2 py-1 rounded"
+                className="fixed right-5 top-[350px] text-sm text-[#687182] hover:text-[#181c25] underline z-[2147483647] pointer-events-auto bg-white/80 shadow-sm border border-[#dde1e8] px-2 py-1 rounded"
               >
                 Close Preview
               </button>

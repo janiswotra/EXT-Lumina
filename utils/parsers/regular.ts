@@ -1,5 +1,5 @@
 import { CandidateProfile, Experience, Education, Certification, Course, Organization } from '../../types';
-import { getText, getSectionByTitle, getListItems, parseDateRange, getConnectionDegree } from './shared';
+import { getText, getSectionByTitle, getListItems, getVisualLines, parseDateRange, getConnectionDegree } from './shared';
 import { parseSalesNavigatorProfile } from './salesNav';
 import { isSalesNavigator } from './shared';
 
@@ -13,10 +13,29 @@ export const parseProfile = (): CandidateProfile => {
 
   // --- Regular LinkedIn Profile Parsing ---
   // --- 1. Basic Info ---
+
   const fullName = getText(document, 'h1.text-heading-xlarge') ||
     getText(document, '.text-heading-xlarge') ||
     getText(document, 'h1.t-24') ||
-    getText(document, '.pv-text-details__left-panel h1');
+    getText(document, '.pv-text-details__left-panel h1') ||
+    getText(document, '.pv-top-card h1') ||
+    getText(document, 'main h1') ||
+    // 2025/2026 LinkedIn layout: name moved to h2
+    (() => {
+      const h2s = Array.from(document.querySelectorAll('main h2, h2'));
+      for (const h2 of h2s) {
+        const text = h2.textContent?.trim() || '';
+        if (!text || text.length < 3 || text.length > 50) continue;
+        const words = text.split(' ');
+        if (words.length < 2 || words.length > 5) continue;
+        // Must look like a person name (capitalized words, no section headers)
+        const sectionHeaders = ['about', 'experience', 'education', 'skills', 'languages', 'activity', 'interests', 'featured', 'certifications', 'licenses', 'recommendations', 'volunteering', 'organizations', 'people', 'you might', 'ad options', 'don\'t want', 'notifications'];
+        if (sectionHeaders.some(h => text.toLowerCase().includes(h))) continue;
+        if (/\d/.test(text)) continue;
+        return text;
+      }
+      return '';
+    })();
 
   let firstName = '';
   let lastName = '';
@@ -27,16 +46,109 @@ export const parseProfile = (): CandidateProfile => {
     lastName = parts.slice(1).join(' ');
   }
 
-  const headline = getText(document, '.text-body-medium.break-words') ||
-    getText(document, '[data-generated-suggestion-target="headline"]');
+  // ─── Extract headline and location ───
+  // Strategy: old LinkedIn selectors first, with validation they don't return wrong data.
+  // Then 2025/2026 fallback using text node analysis near the name element.
 
-  const location = getText(document, '.text-body-small.inline.t-black--light.break-words') ||
-    getText(document, '.pb2 .text-body-small');
+  const safeGetText = (selector: string): string => {
+    const val = getText(document, selector);
+    // Guard: old selectors sometimes return the person's name instead
+    if (val && val !== fullName && !val.includes(fullName)) return val;
+    return '';
+  };
+
+  let headline = safeGetText('.text-body-medium.break-words') ||
+    safeGetText('[data-generated-suggestion-target="headline"]');
+
+  let location = safeGetText('.text-body-small.inline.t-black--light.break-words') ||
+    safeGetText('.pb2 .text-body-small');
+
+  // 2025/2026 fallback: extract from text nodes near the name element
+  if (!headline || !location) {
+    const h2s = Array.from(document.querySelectorAll('main h2, h2'));
+    let nameEl: Element | null = null;
+    for (const h2 of h2s) {
+      if (h2.textContent?.trim() === fullName) { nameEl = h2; break; }
+    }
+
+    if (nameEl) {
+      // Walk up to find the top card container
+      let topCard = nameEl.parentElement;
+      for (let i = 0; i < 8 && topCard; i++) {
+        const text = topCard.textContent || '';
+        if (text.includes('Contact info') && text.includes(fullName)) break;
+        topCard = topCard.parentElement;
+      }
+
+      if (topCard) {
+        // Collect leaf text nodes (no children = actual visible text)
+        const leafTexts: string[] = [];
+        const allEls = Array.from(topCard.querySelectorAll('*'));
+        for (const el of allEls) {
+          if (el.children.length === 0) {
+            const t = (el.textContent || '').trim();
+            if (t && t.length > 1) leafTexts.push(t);
+          }
+        }
+
+        // Deduplicate
+        const seen = new Set<string>();
+        const uniqueTexts = leafTexts.filter(t => {
+          if (seen.has(t)) return false;
+          seen.add(t);
+          return true;
+        });
+
+        const skipWords = ['contact info', 'follower', 'connection', 'mutual', 'message', 'pending',
+          'more', 'save', 'open', 'show', 'see all', 'get started', '·', '1st', '2nd', '3rd'];
+
+        if (!headline) {
+          for (const t of uniqueTexts) {
+            if (t === fullName || t === firstName || t === lastName) continue;
+            const lower = t.toLowerCase();
+            if (skipWords.some(w => lower === w || lower.startsWith(w))) continue;
+            // Headline is typically 20+ chars, descriptive text
+            if (t.length >= 20 && t.length < 250 && !/^\d/.test(t)) {
+              headline = t;
+              break;
+            }
+          }
+        }
+
+        if (!location) {
+          // Find "Contact info" in the text list, location is typically just before it
+          const ciIndex = uniqueTexts.findIndex(t => t.toLowerCase() === 'contact info');
+          if (ciIndex > 0) {
+            const candidate = uniqueTexts[ciIndex - 1];
+            if (candidate && candidate !== fullName && candidate !== headline &&
+              candidate.length < 60 && candidate.length > 2) {
+              location = candidate;
+            }
+          }
+
+          // Alternative: look for short geographic-looking text
+          if (!location) {
+            for (const t of uniqueTexts) {
+              if (t === fullName || t === headline) continue;
+              const lower = t.toLowerCase();
+              if (skipWords.some(w => lower === w || lower.startsWith(w))) continue;
+              if (t.length >= 3 && t.length < 50 && /^[A-Z]/.test(t) &&
+                !t.includes('BNI') && !t.includes('CEO') && !t.includes('Director') &&
+                (t.includes(',') || t.match(/^[A-Z][a-z]+$/))) {
+                location = t;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 
   // --- Extract Current Company from Profile Header (Top Card) ---
   let currentCompanyFromHeader = '';
 
-  // Strategy 1: Button element with company link in top card (most common 2024/2025 layout)
+  // Strategy 1: Button element with company link in top card (2024/2025 layout)
   const companyButton = document.querySelector('button[aria-label*="Current company"]') as HTMLElement;
   if (companyButton) {
     currentCompanyFromHeader = companyButton.textContent?.trim() || '';
@@ -61,7 +173,7 @@ export const parseProfile = (): CandidateProfile => {
     }
   }
 
-  // Strategy 4: Direct text from top card area (second line often has company info)
+  // Strategy 4: Direct text from top card area (2024/2025 layout)
   if (!currentCompanyFromHeader) {
     const topCardTexts = document.querySelectorAll('.pv-text-details__left-panel ul li button span[aria-hidden="true"], .mt2 ul li button span[aria-hidden="true"]');
     for (const el of topCardTexts) {
@@ -73,6 +185,64 @@ export const parseProfile = (): CandidateProfile => {
         !text.includes(' mo') &&
         text.length > 2 &&
         text.length < 100) {
+        currentCompanyFromHeader = text;
+        break;
+      }
+    }
+  }
+
+  // Strategy 5 (2025/2026): Find company from top card leaf texts
+  // Pattern: "Company · Education" or just "Company" — text between headline and location
+  if (!currentCompanyFromHeader) {
+    const h2s = Array.from(document.querySelectorAll('main h2, h2'));
+    let nameEl: Element | null = null;
+    for (const h2 of h2s) {
+      if (h2.textContent?.trim() === fullName) { nameEl = h2; break; }
+    }
+    if (nameEl) {
+      let topCard = nameEl.parentElement;
+      for (let i = 0; i < 8 && topCard; i++) {
+        if ((topCard.textContent || '').includes('Contact info')) break;
+        topCard = topCard.parentElement;
+      }
+      if (topCard) {
+        const leafTexts: string[] = [];
+        const allEls = Array.from(topCard.querySelectorAll('*'));
+        for (const el of allEls) {
+          if (el.children.length === 0) {
+            const t = (el.textContent || '').trim();
+            if (t && t.length > 1) leafTexts.push(t);
+          }
+        }
+        // Look for a text that's between headline and location — contains "·" separator
+        // like "BNI Latvija · Rigas Tehniska Universitate"
+        for (const t of leafTexts) {
+          if (t === fullName || t === headline || t === location) continue;
+          if (t.startsWith('·')) continue; // skip "· 1st" etc.
+          if (t.length < 3 || t.length > 120) continue;
+          const lower = t.toLowerCase();
+          if (lower.includes('follower') || lower.includes('connection') ||
+            lower.includes('contact info') || lower.includes('message') ||
+            lower.includes('mutual') || /^\d/.test(t)) continue;
+          // This is likely "Company · Education" or "Company"
+          if (t.includes(' · ')) {
+            currentCompanyFromHeader = t.split(' · ')[0].trim();
+          } else {
+            currentCompanyFromHeader = t;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // Strategy 6: Company links with /company/ in href
+  if (!currentCompanyFromHeader) {
+    const companyLinks = Array.from(document.querySelectorAll('main a[href*="/company/"]'));
+    for (const link of companyLinks) {
+      const text = link.textContent?.trim() || '';
+      if (text && text.length > 1 && text.length < 80 &&
+        !text.toLowerCase().includes('follower')) {
         currentCompanyFromHeader = text;
         break;
       }
@@ -118,27 +288,62 @@ export const parseProfile = (): CandidateProfile => {
       'img[alt*="photo" i][class*="profile"]'
     ];
 
+    const isValidProfileImg = (src: string): boolean =>
+      !!src &&
+      src.startsWith('http') &&
+      !src.includes('data:image') &&
+      !src.startsWith('blob:') &&
+      !src.includes('ghost') &&
+      !src.includes('li_ghost') &&
+      !src.includes('placeholder') &&
+      !src.includes('static.licdn.com/aero-v1/sc/h/') &&
+      !src.includes('unavailable') &&
+      !src.includes('displaybackground');
+
     for (const selector of pictureSelectors) {
       const imgEl = document.querySelector(selector) as HTMLImageElement;
-      if (imgEl && imgEl.src) {
-        const src = imgEl.src;
-        if (!src.includes('data:image') &&
-          !src.startsWith('blob:') &&
-          !src.includes('ghost') &&
-          !src.includes('placeholder') &&
-          !src.includes('static.licdn.com/aero-v1/sc/h/') &&
-          src.startsWith('http')) {
-          profilePictureUrl = src;
+      if (imgEl?.src && isValidProfileImg(imgEl.src)) {
+        profilePictureUrl = imgEl.src;
+        break;
+      }
+    }
+
+    // Strategy 3: Find img with person's name in alt text (2025/2026 layout)
+    if (!profilePictureUrl && fullName) {
+      const allImgs = document.querySelectorAll('main img, [class*="top-card"] img, header img');
+      for (const img of allImgs) {
+        const imgEl = img as HTMLImageElement;
+        const alt = imgEl.alt || '';
+        if (alt.includes(fullName) || alt.includes(firstName)) {
+          if (imgEl.src && isValidProfileImg(imgEl.src)) {
+            profilePictureUrl = imgEl.src;
+            break;
+          }
+        }
+      }
+    }
+
+    // Strategy 4: Large media.licdn.com image in header area
+    if (!profilePictureUrl) {
+      const headerImgs = document.querySelectorAll('main img[src*="media.licdn.com"], main img[src*="profile-displayphoto"]');
+      for (const img of headerImgs) {
+        const imgEl = img as HTMLImageElement;
+        if (imgEl.src && isValidProfileImg(imgEl.src) &&
+          (imgEl.width >= 80 || imgEl.height >= 80 || imgEl.getAttribute('width') === '200')) {
+          // Skip banner images (much wider than tall)
+          if (imgEl.width > 0 && imgEl.height > 0 && imgEl.width > imgEl.height * 2) continue;
+          profilePictureUrl = imgEl.src;
           break;
         }
       }
     }
 
+    // Strategy 5: Button wrapping profile photo
     if (!profilePictureUrl) {
-      const photoButton = document.querySelector('button.pv-top-card-profile-picture--photo') as HTMLElement;
+      const photoButton = document.querySelector('button.pv-top-card-profile-picture--photo, button[aria-label*="photo" i], button[aria-label*="picture" i]') as HTMLElement;
       if (photoButton) {
         const bgImg = photoButton.querySelector('img') as HTMLImageElement;
-        if (bgImg && bgImg.src && bgImg.src.startsWith('http') && !bgImg.src.startsWith('blob:')) {
+        if (bgImg?.src && isValidProfileImg(bgImg.src)) {
           profilePictureUrl = bgImg.src;
         }
       }
@@ -149,10 +354,34 @@ export const parseProfile = (): CandidateProfile => {
   let about = '';
   const aboutSection = getSectionByTitle('About');
   if (aboutSection) {
+    // Strategy 1: Classic LinkedIn span[aria-hidden="true"]
     const aboutText = aboutSection.querySelector('div.display-flex.ph5.pv3 span[aria-hidden="true"]') ||
       aboutSection.querySelector('span[aria-hidden="true"]');
     if (aboutText) {
       about = aboutText.textContent?.trim() || '';
+    }
+    // Strategy 2 (2025/2026): Find the single element with the longest text content
+    // About text lives in one element, NOT spread across many leaf nodes
+    if (!about) {
+      const allEls = Array.from(aboutSection.querySelectorAll('*'));
+      let bestText = '';
+      for (const el of allEls) {
+        const t = (el.textContent || '').trim();
+        // Skip the section header and short UI elements
+        if (t.toLowerCase() === 'about' || t.length < 20) continue;
+        // Skip if it's a container that includes the header text + more
+        if (t.startsWith('About') && t.length > 6) {
+          const withoutAbout = t.replace(/^About\s*/, '').trim();
+          if (withoutAbout.length > bestText.length) bestText = withoutAbout;
+          continue;
+        }
+        // Pick the element whose text is the longest (the actual about paragraph)
+        if (t.length > bestText.length && t.length < 3000) {
+          bestText = t;
+        }
+      }
+      // Clean: remove trailing "...more" or "…more"
+      about = bestText.replace(/[…\.]{0,3}\s*more\s*$/i, '').trim();
     }
   }
 
@@ -160,256 +389,105 @@ export const parseProfile = (): CandidateProfile => {
   const experiences: Experience[] = [];
   const expSection = getSectionByTitle('Experience');
 
-  if (expSection) {
-    const items = getListItems(expSection);
-    items.forEach(item => {
-      // Check if this is a "grouped" company entry with nested positions
-      const nestedList = item.querySelector('ul.pvs-list, ul[class*="pvs-list"]');
-      const nestedItems = nestedList ? Array.from(nestedList.querySelectorAll(':scope > li')) : [];
+  const employmentTypes = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
+  const workLocationTypes = ['on-site', 'remote', 'hybrid'];
 
-      // Extract potential company from parent for grouped entries
-      let companyFromParent = '';
-      if (nestedItems.length > 0) {
-        const parentSpans = Array.from(item.querySelectorAll(':scope > div span[aria-hidden="true"]'))
-          .map(el => el.textContent?.trim() || '')
-          .filter(text => text.length > 0 && !text.includes(' yr') && !text.includes(' mo'));
-        companyFromParent = parentSpans.length > 0 ? parentSpans[0].split('·')[0].trim() : '';
+  if (expSection) {
+    // Line-based parsing: get ALL text from the section, split by date lines.
+    const allLines = getVisualLines(expSection).filter(t => {
+      const l = t.toLowerCase();
+      return l !== 'experience' && l !== 'show all' &&
+        !/^(see|show)\s*(more|less)/i.test(t) && t.length > 1;
+    });
+
+    // Find indices of date lines (each date = one experience entry)
+    const dateIndices: number[] = [];
+    allLines.forEach((line, i) => {
+      if (/\d{4}/.test(line) && /[-–]/.test(line)) dateIndices.push(i);
+    });
+
+    let lastBoundary = -1;
+
+    for (const dateIdx of dateIndices) {
+      const dateLine = allLines[dateIdx].split(' · ')[0].trim();
+      const dates = parseDateRange(dateLine);
+
+      let title = '';
+      let company = '';
+      let loc = '';
+
+      // Look backward from date for title and optional "Company · Employment" line
+      let searchIdx = dateIdx - 1;
+
+      // Skip duration-only lines ("3 yrs 9 mos") and location lines from previous entry
+      while (searchIdx > lastBoundary) {
+        const line = allLines[searchIdx];
+        const lower = line.toLowerCase();
+        if (/^\d+\s*(yr|mo)/i.test(line) || workLocationTypes.includes(lower)) {
+          searchIdx--;
+          continue;
+        }
+        break;
       }
 
-      // Use grouped parsing ONLY if we have nested items AND successfully extracted company
-      if (nestedItems.length > 0 && companyFromParent) {
-
-        // Parse each nested position
-        nestedItems.forEach(nestedItem => {
-          const visualLines = Array.from(nestedItem.querySelectorAll('span[aria-hidden="true"]'))
-            .map(el => el.textContent?.trim() || '')
-            .filter(text => text.length > 0);
-
-          const uniqueLines = [...new Set(visualLines)];
-
-          if (uniqueLines.length >= 1) {
-            let title = uniqueLines[0];
-            const company = companyFromParent;
-            let startDate = '';
-            let endDate = '';
-            let loc = '';
-            let description = '';
-
-            // Extract title from "Title at Company" format if present
-            if (title.includes(' at ')) {
-              const parts = title.split(' at ');
-              title = parts[0].trim();
-            }
-
-            // Employment type keywords to filter out
-            const employmentTypes = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
-            const workLocationTypes = ['on-site', 'remote', 'hybrid'];
-
-            const dateLineIndex = uniqueLines.findIndex(txt => /\d{4}/.test(txt) || txt.toLowerCase().includes('present'));
-
-            if (dateLineIndex > -1) {
-              const dateText = uniqueLines[dateLineIndex];
-              const dates = parseDateRange(dateText);
-              startDate = dates.startDate;
-              endDate = dates.endDate;
-
-              // Check for location after date
-              if (uniqueLines[dateLineIndex + 1]) {
-                const possibleLoc = uniqueLines[dateLineIndex + 1];
-                const lower = possibleLoc.toLowerCase();
-                if (possibleLoc.length < 50 &&
-                  !possibleLoc.includes('·') &&
-                  !possibleLoc.includes(' yr') &&
-                  !possibleLoc.includes(' mo') &&
-                  !employmentTypes.includes(lower) &&
-                  !workLocationTypes.includes(lower)) {
-                  loc = possibleLoc;
-                }
-              }
-
-              // Extract description
-              const metadataEndIndex = loc ? dateLineIndex + 2 : dateLineIndex + 1;
-              const descriptionLines = uniqueLines.slice(metadataEndIndex).filter(line => {
-                if (line.length < 40) return false;
-                if (/^\d+\s*(yr|mo|year|month)/i.test(line)) return false;
-                if (/^(see|show)\s*(more|less)/i.test(line)) return false;
-                if (line.startsWith('Skills:')) return false;
-                return true;
-              });
-
-              if (descriptionLines.length > 0) {
-                description = descriptionLines.join('\n\n');
-              }
-            }
-
-            if (title && company) {
-              experiences.push({
-                title,
-                company,
-                startDate,
-                endDate,
-                location: loc,
-                description
-              });
-            }
-          }
-        });
-      } else {
-        // Standard single-position entry (original logic)
-        const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
-          .map(el => el.textContent?.trim() || '')
-          .filter(text => text.length > 0);
-
-        const uniqueLines = [...new Set(visualLines)];
-
-        if (uniqueLines.length >= 2) {
-          let title = '';
-          let company = '';
-          let startDate = '';
-          let endDate = '';
-          let loc = '';
-          let description = '';
-
-          const employmentTypes = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
-          const workLocationTypes = ['on-site', 'remote', 'hybrid'];
-
-          const line0 = uniqueLines[0];
-          const line1 = uniqueLines[1] || '';
-          const line2 = uniqueLines[2] || '';
-
-          const line1Lower = line1.toLowerCase();
-
-          const line1StartsWithMetadata = employmentTypes.some(type =>
-            line1Lower.startsWith(type) || line1Lower.startsWith(type + ' ')
-          );
-
-          const line1HasCompanyWithMetadata = !line1StartsWithMetadata &&
-            line1.includes('·') &&
-            employmentTypes.some(type => line1Lower.includes(type));
-
-          const looksLikeJobTitle = (text: string): boolean => {
-            if (!text) return false;
-            const titleKeywords = ['analyst', 'manager', 'director', 'engineer', 'developer', 'designer',
-              'consultant', 'specialist', 'coordinator', 'associate', 'partner',
-              'executive', 'officer', 'lead', 'head', 'senior', 'junior', 'intern',
-              'advisor', 'president', 'founder', 'ceo', 'cto', 'cfo', 'vp', 'chief'];
-            const lower = text.toLowerCase();
-            return titleKeywords.some(kw => lower.includes(kw)) || (text.includes('(') && text.includes(')'));
-          };
-
-          // CASE A: "Title at Company" pattern in line0
-          if (line0.includes(' at ')) {
-            const parts = line0.split(' at ');
-            if (parts.length === 2) {
-              title = parts[0].trim();
-              company = parts[1].trim();
-            }
-          }
-          // CASE B: Title-first with "Company · Employment" in line1
-          else if ((looksLikeJobTitle(line0) || line1HasCompanyWithMetadata) && line1) {
-            title = line0.trim();
-            if (line1.includes('·')) {
-              company = line1.split('·')[0].trim();
-            } else {
-              company = line1.trim();
-            }
-          }
-          // CASE C: Company-first with pure metadata in line1 ("Full-time · 9 yrs")
-          else if (!looksLikeJobTitle(line0) && line1StartsWithMetadata && line2 && uniqueLines.length >= 3) {
-            company = line0.trim();
-            title = line2.trim();
-          }
-          // CASE D: Company-first with title in line1 (no metadata)
-          else if (!looksLikeJobTitle(line0) && looksLikeJobTitle(line1) &&
-            line2 && (/\d{4}/.test(line2) || line2.toLowerCase().includes('present'))) {
-            company = line0.trim();
-            title = line1.trim();
-          } else {
-            // FALLBACK: Assume title-first
-            title = line0;
-
-            if (!company && line1) {
-              if (line1.includes('·')) {
-                const beforeDot = line1.split('·')[0].trim();
-                if (!employmentTypes.some(t => beforeDot.toLowerCase() === t)) {
-                  company = beforeDot;
-                }
-              } else {
-                const filteredLines = uniqueLines.slice(1).filter(line => {
-                  const lower = line.toLowerCase();
-                  return !employmentTypes.includes(lower) &&
-                    !workLocationTypes.includes(lower) &&
-                    !line.includes(' yr') &&
-                    !line.includes(' mo') &&
-                    !/^\d{4}/.test(line);
-                });
-
-                if (filteredLines.length > 0) {
-                  company = filteredLines[0];
-                }
-              }
-            }
-          }
-
-          const dateLineIndex = uniqueLines.findIndex(txt => /\d{4}/.test(txt) || txt.toLowerCase().includes('present'));
-
-          if (dateLineIndex > -1) {
-            const dateText = uniqueLines[dateLineIndex];
-            const dates = parseDateRange(dateText);
-            startDate = dates.startDate;
-            endDate = dates.endDate;
-
-            if (!company && dateLineIndex > 1) {
-              const candidateCompany = uniqueLines[dateLineIndex - 1];
-              const lower = candidateCompany.toLowerCase();
-              if (!employmentTypes.includes(lower) &&
-                !workLocationTypes.includes(lower) &&
-                !candidateCompany.includes(' yr') &&
-                !candidateCompany.includes(' mo')) {
-                company = candidateCompany;
-              }
-            }
-
-            if (uniqueLines[dateLineIndex + 1]) {
-              const possibleLoc = uniqueLines[dateLineIndex + 1];
-              const lower = possibleLoc.toLowerCase();
-              if (possibleLoc.length < 50 &&
-                !possibleLoc.includes('·') &&
-                !employmentTypes.includes(lower) &&
-                !workLocationTypes.includes(lower)) {
-                loc = possibleLoc;
-              }
-            }
-
-            const metadataEndIndex = loc ? dateLineIndex + 2 : dateLineIndex + 1;
-            const descriptionLines = uniqueLines.slice(metadataEndIndex).filter(line => {
-              if (line.length < 40) return false;
-              if (/^\d+\s*(yr|mo|year|month)/i.test(line)) return false;
-              if (/^(see|show)\s*(more|less)/i.test(line)) return false;
-              if (line.startsWith('Skills:')) return false;
-              return true;
-            });
-
-            if (descriptionLines.length > 0) {
-              description = descriptionLines.join('\n\n');
-            }
-          }
-
-          company = company.split('·')[0].trim();
-
-          if (title && company) {
-            experiences.push({
-              title,
-              company,
-              startDate,
-              endDate,
-              location: loc,
-              description
-            });
-          }
+      if (searchIdx > lastBoundary) {
+        const prevLine = allLines[searchIdx];
+        // Check if it's "Company · Employment-type"
+        if (prevLine.includes('·') && employmentTypes.some(t => prevLine.toLowerCase().includes(t))) {
+          company = prevLine.split('·')[0].trim();
+          searchIdx--;
+        }
+        // Now searchIdx should be the title
+        if (searchIdx > lastBoundary) {
+          title = allLines[searchIdx];
         }
       }
-    });
+
+      // Look forward from date for location
+      const nextIdx = dateIdx + 1;
+      if (nextIdx < allLines.length) {
+        const nextLine = allLines[nextIdx];
+        const nextLower = nextLine.toLowerCase();
+        if (nextLine.length < 60 &&
+          (workLocationTypes.includes(nextLower) ||
+            workLocationTypes.some(w => nextLower.includes(w)) ||
+            (nextLine.includes(',') && /^[A-Z]/.test(nextLine)))) {
+          loc = nextLine.split(' · ')[0].trim();
+          lastBoundary = nextIdx;
+        } else {
+          lastBoundary = dateIdx;
+        }
+      } else {
+        lastBoundary = dateIdx;
+      }
+
+      if (title) {
+        experiences.push({
+          title, company,
+          startDate: dates.startDate, endDate: dates.endDate,
+          location: loc, description: ''
+        });
+      }
+    }
+
+    // Fill missing companies: find company from lines before first date (grouped experience)
+    if (experiences.length > 0 && experiences.some(e => !e.company)) {
+      const firstDateIdx = dateIndices[0] || 0;
+      const expTitles = new Set(experiences.map(e => e.title));
+
+      for (let i = 0; i < firstDateIdx; i++) {
+        const line = allLines[i];
+        if (expTitles.has(line)) continue;
+        if (/^\d+\s*(yr|mo)/i.test(line)) continue;
+        if (employmentTypes.includes(line.toLowerCase())) continue;
+        if (line.length <= 2) continue;
+        const groupCompany = line.split('·')[0].trim();
+        if (groupCompany) {
+          experiences.forEach(e => { if (!e.company) e.company = groupCompany; });
+          break;
+        }
+      }
+    }
   }
 
   // Find current company
@@ -438,143 +516,193 @@ export const parseProfile = (): CandidateProfile => {
   const currentCompanyFromExperience = currentExp ? currentExp.company : '';
   const currentCompany = currentCompanyFromHeader || currentCompanyFromExperience;
 
-  // --- 4. Education ---
+  // --- 4. Education (line-based) ---
   const educations: Education[] = [];
   const eduSection = getSectionByTitle('Education');
-
   if (eduSection) {
-    const items = getListItems(eduSection);
-    items.forEach(item => {
-      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
-        .map(el => el.textContent?.trim() || '')
-        .filter(text => text.length > 0);
-
-      const uniqueLines = [...new Set(visualLines)];
-
-      if (uniqueLines.length >= 1) {
-        const school = uniqueLines[0];
-        let degree = '';
-        let field = '';
-        let endDate = '';
-
-        if (uniqueLines.length > 1) {
-          const degreeField = uniqueLines[1];
-          const parts = degreeField.split(',').map(p => p.trim());
-          degree = parts[0] || '';
-          field = parts[1] || '';
-        }
-
-        const dateLine = uniqueLines.find(txt => /\d{4}/.test(txt));
-        if (dateLine) {
-          const yearMatch = dateLine.match(/[-–]\s*(\d{4})/);
-          if (yearMatch) {
-            endDate = yearMatch[1];
-          } else {
-            const singleYear = dateLine.match(/(\d{4})/);
-            if (singleYear) endDate = singleYear[1];
-          }
-        }
-
-        educations.push({ school, degree, field, endDate });
-      }
+    const allEduLines = getVisualLines(eduSection).filter(t => {
+      const l = t.toLowerCase();
+      return l !== 'education' && !/^(see|show)\s*(more|less|all)/i.test(t) &&
+        !l.startsWith('activities and societies') && !l.startsWith('grade:') &&
+        t.length > 1;
     });
+
+    const isEduDateLine = (line: string): boolean => {
+      if (line.length > 50) return false;
+      if (!/\b(19|20)\d{2}\b/.test(line)) return false;
+      return /[-–]/.test(line) || /^\s*(19|20)\d{2}\s*$/.test(line.trim());
+    };
+
+    let eduCurrent: { school?: string; degreeField?: string } = {};
+    for (const line of allEduLines) {
+      if (isEduDateLine(line)) {
+        if (eduCurrent.school) {
+          const parts = (eduCurrent.degreeField || '').split(',').map(p => p.trim());
+          const yearMatch = line.match(/[-–]\s*(\d{4})/);
+          const endDate = yearMatch ? yearMatch[1] : (line.match(/(\d{4})/) || [])[1] || '';
+          educations.push({
+            school: eduCurrent.school, degree: parts[0] || '',
+            field: parts.slice(1).join(', ') || '', endDate
+          });
+          eduCurrent = {};
+        }
+        continue;
+      }
+      if (!eduCurrent.school) {
+        eduCurrent.school = line;
+      } else if (!eduCurrent.degreeField) {
+        eduCurrent.degreeField = line;
+      } else {
+        educations.push({
+          school: eduCurrent.school,
+          degree: (eduCurrent.degreeField || '').split(',')[0]?.trim() || '',
+          field: (eduCurrent.degreeField || '').split(',').slice(1).join(', ')?.trim() || '',
+          endDate: ''
+        });
+        eduCurrent = { school: line };
+      }
+    }
+    if (eduCurrent.school) {
+      const parts = (eduCurrent.degreeField || '').split(',').map(p => p.trim());
+      educations.push({
+        school: eduCurrent.school, degree: parts[0] || '',
+        field: parts.slice(1).join(', ') || '', endDate: ''
+      });
+    }
   }
 
-  // --- 5. Skills ---
+  // --- 5. Skills (getListItems + line-based fallback) ---
   const skills: string[] = [];
   const skillsSection = getSectionByTitle('Skills');
   if (skillsSection) {
     const items = getListItems(skillsSection);
-    items.forEach(item => {
-      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
-        .map(el => el.textContent?.trim() || '')
-        .filter(t => t);
-      if (visualLines.length > 0) skills.push(visualLines[0]);
-    });
+    if (items.length > 0) {
+      items.forEach(item => {
+        const lines = getVisualLines(item).filter(t => t.toLowerCase() !== 'skills');
+        if (lines.length > 0) skills.push(lines[0]);
+      });
+    }
+    if (skills.length === 0) {
+      const allSkillLines = getVisualLines(skillsSection).filter(t => {
+        const l = t.toLowerCase();
+        return l !== 'skills' && !/^(see|show)\s*(more|less|all)/i.test(t) &&
+          !/endorsement/i.test(t) && !/^\d+$/.test(t) && t.length > 1 && t.length < 100;
+      });
+      for (const line of allSkillLines) {
+        if (!skills.includes(line)) skills.push(line);
+      }
+    }
   }
 
-  // --- 6. Languages ---
+  // --- 6. Languages (getListItems + line-based fallback) ---
   const languages: string[] = [];
   const langSection = getSectionByTitle('Languages');
   if (langSection) {
     const items = getListItems(langSection);
-    items.forEach(item => {
-      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
-        .map(el => el.textContent?.trim() || '')
-        .filter(t => t);
-      if (visualLines.length > 0) languages.push(visualLines[0]);
-    });
+    if (items.length > 0) {
+      items.forEach(item => {
+        const lines = getVisualLines(item).filter(t => t.toLowerCase() !== 'languages');
+        if (lines.length > 0) languages.push(lines[0]);
+      });
+    }
+    if (languages.length === 0) {
+      const allLangLines = getVisualLines(langSection).filter(t => {
+        const l = t.toLowerCase();
+        return l !== 'languages' && !/^(see|show)\s*(more|less|all)/i.test(t) &&
+          !/proficiency/i.test(t) && t.length > 1 && t.length < 100;
+      });
+      for (const line of allLangLines) {
+        if (!languages.includes(line)) languages.push(line);
+      }
+    }
   }
 
-  // --- 7. Certifications ---
+  // --- 7. Certifications (line-based) ---
   const certifications: Certification[] = [];
   const certSection = getSectionByTitle('Licenses & certifications') || getSectionByTitle('Certifications');
   if (certSection) {
-    const items = getListItems(certSection);
-    items.forEach(item => {
-      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
-        .map(el => el.textContent?.trim() || '')
-        .filter(t => t);
-
-      if (visualLines.length > 0) {
-        const name = visualLines[0];
-        const issuer = visualLines.length > 1 ? visualLines[1] : undefined;
-        const issueDate = visualLines.find(line => /\d{4}/.test(line));
-
-        certifications.push({
-          name,
-          issuer,
-          issueDate
-        });
-      }
+    const allCertLines = getVisualLines(certSection).filter(t => {
+      const l = t.toLowerCase();
+      return l !== 'certifications' && l !== 'licenses & certifications' &&
+        l !== 'licenses' && !/^(see|show)\s*(more|less|all)/i.test(t) &&
+        l !== 'show credential' && l !== 'see credential' &&
+        !l.startsWith('credential id') && t.length > 1;
     });
+
+    const isCertDateLine = (line: string): boolean =>
+      /issued/i.test(line) ||
+      (/\b(19|20)\d{2}\b/.test(line) && /[-–]/.test(line) && line.length < 50) ||
+      /^no expiration/i.test(line) || /^expires/i.test(line);
+
+    let certCurrent: { name?: string; issuer?: string; issueDate?: string } = {};
+    for (const line of allCertLines) {
+      if (isCertDateLine(line)) {
+        if (!certCurrent.issueDate) certCurrent.issueDate = line;
+        if (certCurrent.name) {
+          certifications.push({
+            name: certCurrent.name, issuer: certCurrent.issuer,
+            issueDate: certCurrent.issueDate
+          });
+          certCurrent = {};
+        }
+        continue;
+      }
+      if (!certCurrent.name) {
+        certCurrent.name = line;
+      } else if (!certCurrent.issuer) {
+        certCurrent.issuer = line;
+      } else {
+        certifications.push({ name: certCurrent.name, issuer: certCurrent.issuer });
+        certCurrent = { name: line };
+      }
+    }
+    if (certCurrent.name) {
+      certifications.push({
+        name: certCurrent.name, issuer: certCurrent.issuer,
+        issueDate: certCurrent.issueDate
+      });
+    }
   }
 
-  // --- 8. Courses ---
+  // --- 8. Courses (line-based) ---
   const courses: Course[] = [];
   const courseSection = getSectionByTitle('Courses');
   if (courseSection) {
-    const items = getListItems(courseSection);
-    items.forEach(item => {
-      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
-        .map(el => el.textContent?.trim() || '')
-        .filter(t => t);
-
-      if (visualLines.length > 0) {
-        const name = visualLines[0];
-        const institution = visualLines.length > 1 ? visualLines[1] : undefined;
-
-        courses.push({
-          name,
-          institution
-        });
-      }
+    const allCourseLines = getVisualLines(courseSection).filter(t => {
+      const l = t.toLowerCase();
+      return l !== 'courses' && !/^(see|show)\s*(more|less|all)/i.test(t) && t.length > 1;
     });
+    for (let i = 0; i < allCourseLines.length; i += 2) {
+      courses.push({
+        name: allCourseLines[i],
+        institution: i + 1 < allCourseLines.length ? allCourseLines[i + 1] : undefined
+      });
+    }
   }
 
-  // --- 9. Organizations ---
+  // --- 9. Organizations (line-based) ---
   const organizations: Organization[] = [];
   const orgSection = getSectionByTitle('Organizations');
   if (orgSection) {
-    const items = getListItems(orgSection);
-    items.forEach(item => {
-      const visualLines = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
-        .map(el => el.textContent?.trim() || '')
-        .filter(t => t);
-
-      if (visualLines.length > 0) {
-        const name = visualLines[0];
-        const role = visualLines.length > 1 ? visualLines[1] : undefined;
-
-        organizations.push({
-          name,
-          role
-        });
-      }
+    const allOrgLines = getVisualLines(orgSection).filter(t => {
+      const l = t.toLowerCase();
+      return l !== 'organizations' && !/^(see|show)\s*(more|less|all)/i.test(t) && t.length > 1;
     });
+    for (let i = 0; i < allOrgLines.length; i += 2) {
+      organizations.push({
+        name: allOrgLines[i],
+        role: i + 1 < allOrgLines.length ? allOrgLines[i + 1] : undefined
+      });
+    }
   }
 
-  // --- 10. Connection Degree ---
+  // --- 10. Recommendations (as references) ---
+  // Sync parse of visible recs; full async scrape happens in parseProfileWithRetry
+  const recSection = getSectionByTitle('Recommendations') || getSectionByTitle('Recommendation');
+  const recommendations = parseRecommendationsFromContainer(recSection);
+
+
+  // --- 11. Connection Degree ---
   const connectionDegree = getConnectionDegree();
 
   return {
@@ -593,6 +721,72 @@ export const parseProfile = (): CandidateProfile => {
     languages,
     certifications,
     courses,
-    organizations
+    organizations,
+    recommendations: recommendations.length > 0 ? recommendations : undefined,
   };
 };
+
+/**
+ * Parses recommendations from a container element (section or modal).
+ * LinkedIn only shows recommender metadata on profile page (name, title, date/relationship).
+ * Full recommendation text is only visible after clicking "Show all".
+ * This captures what's available: "Name, Title — relationship context" or "Name: full text".
+ */
+export function parseRecommendationsFromContainer(container: HTMLElement | null): string[] {
+  const recommendations: string[] = [];
+  if (!container) return recommendations;
+
+  const allLines = getVisualLines(container).filter(t => {
+    const l = t.toLowerCase();
+    return l !== 'recommendations' && l !== 'recommendation' &&
+      !l.startsWith('received') && !l.startsWith('given') &&
+      !l.startsWith('recommend ') && !l.startsWith('show all') &&
+      l !== 'show more' && l !== 'show less' && l !== 'see more' && l !== 'see less' &&
+      !t.startsWith('· ') && t.length > 2;
+  });
+
+  const dateRelPattern = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}/i;
+
+  // Collect per-recommendation data, then build entries
+  let currentTitle = '';
+  let currentRelationship = '';
+
+  for (const line of allLines) {
+    // Date-relationship line: "December 23, 2025, Evelina was Edgars's client"
+    if (dateRelPattern.test(line)) {
+      // If we already have a pending relationship, flush previous rec
+      if (currentRelationship) {
+        recommendations.push(currentTitle ? `${currentTitle} — ${currentRelationship}` : currentRelationship);
+      }
+      // Extract relationship part after the date
+      const relMatch = line.match(/\d{4},\s*(.+)/);
+      currentRelationship = relMatch ? relMatch[1].trim() : line;
+      currentTitle = '';
+      continue;
+    }
+
+    // Long text (>80 chars with punctuation) = actual recommendation text
+    if (line.length > 80 && (line.includes('. ') || line.includes('! ') || line.includes(', '))) {
+      // Flush any pending metadata first
+      const prefix = currentTitle || '';
+      const entry = prefix ? `${prefix}: ${line}` : line;
+      recommendations.push(entry);
+      currentTitle = '';
+      currentRelationship = '';
+      continue;
+    }
+
+    // Short text = recommender title/company (e.g., "CEO at Vervo Group", "Logistics by NEXT MOVE SIA")
+    if (line.length < 100) {
+      currentTitle = line;
+    }
+  }
+
+  // Flush last pending rec
+  if (currentRelationship) {
+    recommendations.push(currentTitle ? `${currentTitle} — ${currentRelationship}` : currentRelationship);
+  }
+
+  return recommendations;
+}
+

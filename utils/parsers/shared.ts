@@ -49,9 +49,11 @@ export const waitForProfileToLoad = (timeout: number = 5000): Promise<boolean> =
         // Recruiter
         '.profile-info h1',
         '.profile-info__title',
-        // Generic fallback - any h1 in main content area
+        // Generic fallback - any h1/h2 in main content area
         'main h1',
-        '.scaffold-layout__main h1'
+        '.scaffold-layout__main h1',
+        // 2025/2026 LinkedIn layout - name moved to h2
+        'main h2',
       ];
 
       for (const selector of nameSelectors) {
@@ -95,15 +97,39 @@ export const triggerLazyLoading = async (): Promise<void> => {
  * Finds a section element based on the text content of its header.
  */
 export const getSectionByTitle = (titleKeyword: string): HTMLElement | null => {
+  // Strategy 1: Classic LinkedIn sections with <section> tags
   const sections = Array.from(document.querySelectorAll('section'));
-
-  return sections.find(section => {
+  const found = sections.find(section => {
     const header = section.querySelector('div[id*="header"] h1, h2, span, h1');
     if (header && header.textContent) {
       return header.textContent.trim().toLowerCase().includes(titleKeyword.toLowerCase());
     }
     return false;
-  }) || null;
+  });
+  if (found) return found;
+
+  // Strategy 2 (2025/2026): Find h2 with the section title, then return its closest parent container
+  const h2s = Array.from(document.querySelectorAll('h2'));
+  for (const h2 of h2s) {
+    const text = h2.textContent?.trim() || '';
+    if (text.toLowerCase().includes(titleKeyword.toLowerCase())) {
+      // Walk up to find a meaningful container (section, div with list items)
+      const section = h2.closest('section');
+      if (section) return section;
+      // Try parent containers that have list items
+      let parent = h2.parentElement;
+      for (let i = 0; i < 5 && parent; i++) {
+        if (parent.querySelector('ul') || parent.querySelectorAll('li').length > 0) {
+          return parent;
+        }
+        parent = parent.parentElement;
+      }
+      // Fallback: return the h2's grandparent
+      return h2.parentElement?.parentElement as HTMLElement || null;
+    }
+  }
+
+  return null;
 };
 
 /**
@@ -111,8 +137,70 @@ export const getSectionByTitle = (titleKeyword: string): HTMLElement | null => {
  */
 export const getListItems = (section: HTMLElement): Element[] => {
   if (!section) return [];
-  const items = section.querySelectorAll('li.artdeco-list__item, li.pvs-list__paged-list-item');
-  return Array.from(items);
+  // Classic LinkedIn classes
+  let items = section.querySelectorAll('li.artdeco-list__item, li.pvs-list__paged-list-item');
+  if (items.length > 0) return Array.from(items);
+  // 2025/2026 fallback: any direct li items in the section's ul
+  const ul = section.querySelector('ul');
+  if (ul) {
+    items = ul.querySelectorAll(':scope > li');
+    if (items.length > 0) return Array.from(items);
+  }
+  // Any li elements in the section
+  items = section.querySelectorAll('li');
+  if (items.length > 0) return Array.from(items);
+
+  // 2025/2026 div-based layout: LinkedIn wraps items in nested divs instead of ul/li.
+  // Try increasing nesting depths — pick the level that yields multiple items.
+  let bestItems: Element[] = [];
+  for (let depth = 2; depth <= 5; depth++) {
+    const sel = ':scope' + ' > div'.repeat(depth);
+    const divItems = Array.from(section.querySelectorAll(sel));
+    const meaningful = divItems.filter(div => {
+      const texts = getVisualLines(div);
+      return texts.length >= 2;
+    });
+    if (meaningful.length > 1) return meaningful;
+    if (meaningful.length === 1 && bestItems.length === 0) {
+      bestItems = meaningful;
+    }
+  }
+  if (bestItems.length > 0) return bestItems;
+
+  return [];
+};
+
+/**
+ * Extracts visible text lines from a list item element.
+ * Works with both old (span[aria-hidden="true"]) and new (2025/2026 leaf text) LinkedIn layouts.
+ */
+export const getVisualLines = (item: Element): string[] => {
+  // Try old pattern first
+  const ariaSpans = Array.from(item.querySelectorAll('span[aria-hidden="true"]'))
+    .map(el => el.textContent?.trim() || '')
+    .filter(t => t.length > 0);
+  if (ariaSpans.length > 0) return [...new Set(ariaSpans)];
+
+  // 2025/2026: extract unique leaf text nodes (elements with no children)
+  const leafTexts: string[] = [];
+  const allEls = Array.from(item.querySelectorAll('*'));
+  for (const el of allEls) {
+    if (el.children.length === 0) {
+      const t = (el.textContent || '').trim();
+      if (t && t.length > 1) leafTexts.push(t);
+    }
+  }
+  // Deduplicate preserving order
+  const seen = new Set<string>();
+  return leafTexts.filter(t => {
+    if (seen.has(t)) return false;
+    seen.add(t);
+    // Filter out UI noise
+    const lower = t.toLowerCase();
+    if (lower === 'more' || lower === 'less' || lower === 'show more' || lower === 'show less') return false;
+    if (t.startsWith('+') && t.length <= 3) return false; // "+2" etc
+    return true;
+  });
 };
 
 /**

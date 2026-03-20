@@ -69,11 +69,11 @@ export const HarvestPanel: React.FC = () => {
 
 
     return (
-        <div className="bg-gradient-to-br from-amber-900/20 to-orange-900/20 rounded-xl p-4 border border-amber-700/50">
+        <div className="bg-gradient-to-br from-[#fffbeb] to-[#fff7ed] rounded-xl p-4 border border-[#fde68a]">
             {/* Header */}
             <div className="flex items-center gap-2 mb-3">
                 <span className="text-xl">🌾</span>
-                <h3 className="font-semibold text-amber-200">
+                <h3 className="font-semibold text-[#92400e] text-base">
                     Harvested Profiles
                 </h3>
             </div>
@@ -81,10 +81,10 @@ export const HarvestPanel: React.FC = () => {
             {/* Count */}
             <div className="mb-4">
                 <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-bold text-amber-400">
+                    <span className="text-3xl font-bold text-[#d97706]">
                         {status.unsyncedCount}
                     </span>
-                    <span className="text-sm text-amber-300">
+                    <span className="text-base text-[#92400e]">
                         profile{status.unsyncedCount !== 1 ? 's' : ''} ready to sync
                     </span>
                 </div>
@@ -95,12 +95,12 @@ export const HarvestPanel: React.FC = () => {
                 onClick={handleSync}
                 disabled={isSyncing || status.unsyncedCount === 0}
                 className={`
-          w-full py-2.5 px-4 rounded-lg font-medium text-sm
+          w-full py-2.5 px-4 rounded-lg font-medium text-base
           transition-all duration-200
           flex items-center justify-center gap-2
           ${status.unsyncedCount > 0 && !isSyncing
-                        ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-md hover:shadow-lg'
-                        : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                        ? 'bg-[#d97706] hover:bg-[#b45309] text-white shadow-md hover:shadow-lg'
+                        : 'bg-[#e8ebf1] text-[#7e8799] cursor-not-allowed'
                     }
         `}
             >
@@ -123,19 +123,19 @@ export const HarvestPanel: React.FC = () => {
             </button>
 
             {/* Last Synced */}
-            <p className="text-xs text-amber-400/70 mt-3 text-center">
+            <p className="text-sm text-[#b45309]/70 mt-3 text-center">
                 Last synced: {formatTimeAgo(status.lastSyncedAt)}
             </p>
 
             {/* Sync Result */}
             {syncResult && (
-                <div className="mt-3 p-2 bg-green-900/30 rounded-lg text-xs text-green-300">
+                <div className="mt-3 p-2 bg-[#ecfdf5] border border-[#a7f3d0] rounded-lg text-sm text-[#065f46]">
                     <div className="font-medium mb-1">✓ Sync Complete</div>
                     <div>
                         Imported: {syncResult.imported} | Updated: {syncResult.updated} | Skipped: {syncResult.skipped}
                     </div>
                     {syncResult.errors.length > 0 && (
-                        <div className="text-red-400 mt-1">
+                        <div className="text-[#dc2626] mt-1">
                             Errors: {syncResult.errors.length}
                         </div>
                     )}
@@ -144,13 +144,13 @@ export const HarvestPanel: React.FC = () => {
 
             {/* Error */}
             {error && (
-                <div className="mt-3 p-2 bg-red-900/30 rounded-lg text-xs text-red-300">
+                <div className="mt-3 p-2 bg-[#fef2f2] border border-[#fecaca] rounded-lg text-sm text-[#991b1b]">
                     {error}
                 </div>
             )}
 
             {/* Hint */}
-            <p className="text-xs text-amber-400/60 mt-3 text-center italic">
+            <p className="text-sm text-[#b45309]/60 mt-3 text-center italic">
                 Profiles are automatically captured when you browse LinkedIn or Sales Navigator
             </p>
         </div>

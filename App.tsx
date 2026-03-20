@@ -17,7 +17,7 @@ const App: React.FC = () => {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <span>✦</span> Yena
         </h1>
-        <p className="text-[#DCE7FF] text-sm mt-1">Candidate Clipper</p>
+        <p className="text-[#DCE7FF] text-base mt-1">Candidate Clipper</p>
       </header>
 
       {/* Content */}
@@ -31,8 +31,8 @@ const App: React.FC = () => {
               </svg>
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-gray-800">Manual Save</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <h2 className="text-base font-semibold text-gray-800">Manual Save</h2>
+              <p className="text-sm text-gray-500 mt-0.5">
                 Look for the <span className="font-bold text-[#4E76D9]">✦ Yena</span> button on LinkedIn and Sales Navigator profiles to save candidates directly.
               </p>
             </div>
@@ -42,7 +42,7 @@ const App: React.FC = () => {
         {/* Open Dashboard Button */}
         <button
           onClick={openDashboard}
-          className="w-full py-2.5 px-4 bg-[#5F86E5] hover:bg-[#4E76D9] text-white rounded-lg font-medium text-sm transition-colors shadow-sm flex items-center justify-center gap-2"
+          className="w-full py-2.5 px-4 bg-[#5F86E5] hover:bg-[#4E76D9] text-white rounded-lg font-medium text-base transition-colors shadow-sm flex items-center justify-center gap-2"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -51,7 +51,7 @@ const App: React.FC = () => {
         </button>
       </main>
 
-      <footer className="p-3 text-center text-xs text-gray-400 border-t border-gray-200">
+      <footer className="p-3 text-center text-sm text-gray-400 border-t border-gray-200">
         Yena v{typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest().version : ''}
       </footer>
     </div>
