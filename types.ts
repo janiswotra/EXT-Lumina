@@ -133,4 +133,5 @@ export type ExtensionMessage =
   | { type: 'GET_LISTS' }
   | { type: 'CHECK_FOR_UPDATES'; payload: { linkedinUrl: string; profileId?: string } }
   | { type: 'SET_API_KEY'; payload: { apiKey: string } }
-  | { type: 'SYNC_MESSAGES'; payload: SyncMessagesPayload };
+  | { type: 'SYNC_MESSAGES'; payload: SyncMessagesPayload }
+  | { type: 'GET_ACTIVE_ENV' };

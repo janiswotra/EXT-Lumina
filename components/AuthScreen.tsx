@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from './Button';
 import { Input } from './ui/Input';
+import { ACTIVE_ENV_KEY, STORAGE_KEYS, ENVIRONMENTS } from '../constants';
 
 interface AuthScreenProps {
     onSuccess: () => void;
@@ -18,14 +19,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess, onClose, isCh
         setIsConnecting(true);
         setAuthError('');
 
-        chrome.storage.local.set({ yena_api_key: apiKey.trim() }, () => {
-            chrome.runtime.sendMessage({ type: 'CHECK_AUTH' }, (response: any) => {
-                setIsConnecting(false);
-                if (response && response.success) {
-                    onSuccess();
-                } else {
-                    setAuthError(response?.message || 'Failed to connect. Please check your key.');
-                }
+        // Read active env and store API key under per-env key
+        chrome.storage.local.get(ACTIVE_ENV_KEY, (envResult: Record<string, unknown>) => {
+            const envId = (envResult[ACTIVE_ENV_KEY] as string) || ENVIRONMENTS[0].id;
+            const storageKey = STORAGE_KEYS.apiKey(envId);
+            chrome.storage.local.set({ [storageKey]: apiKey.trim() }, () => {
+                chrome.runtime.sendMessage({ type: 'CHECK_AUTH' }, (response: any) => {
+                    setIsConnecting(false);
+                    if (response && response.success) {
+                        onSuccess();
+                    } else {
+                        setAuthError(response?.message || 'Failed to connect. Please check your key.');
+                    }
+                });
             });
         });
     };

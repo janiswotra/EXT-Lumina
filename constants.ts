@@ -1,14 +1,52 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
-export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-export const APP_DOMAIN = import.meta.env.VITE_APP_DOMAIN as string;
+// Environment configuration
+export interface EnvConfig {
+  id: 'demo' | 'prod';
+  label: string;
+  domain: string;
+  apiBaseUrl: string;
+  supabaseAnonKey: string;
+}
 
-// Centralized storage keys (yena_ prefix)
+export const ENVIRONMENTS: EnvConfig[] = [
+  {
+    id: 'demo',
+    label: 'Demo',
+    domain: import.meta.env.VITE_APP_DOMAIN_DEMO as string,
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL_DEMO as string,
+    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY_DEMO as string,
+  },
+  {
+    id: 'prod',
+    label: 'Prod',
+    domain: import.meta.env.VITE_APP_DOMAIN_PROD as string,
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL_PROD as string,
+    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY_PROD as string,
+  },
+];
+
+/** Find environment config by matching origin against known domains */
+export function getEnvByDomain(origin: string): EnvConfig | undefined {
+  return ENVIRONMENTS.find((env) => env.domain === origin);
+}
+
+/** Get environment config by id */
+export function getEnvById(id: string): EnvConfig | undefined {
+  return ENVIRONMENTS.find((env) => env.id === id);
+}
+
+/** All known app domains (for origin validation) */
+export const ALL_APP_DOMAINS = ENVIRONMENTS.map((env) => env.domain);
+
+// Storage key for active environment
+export const ACTIVE_ENV_KEY = 'yena_active_env';
+
+// Per-environment storage keys
 export const STORAGE_KEYS = {
-  API_KEY: 'yena_api_key',
-  USER_ID: 'yena_user_id',
-  CACHE_JOBS: 'yena_cache_jobs',
-  CACHE_STAGES: 'yena_cache_stages',
-  CACHE_LISTS: 'yena_cache_lists',
+  apiKey: (envId: string) => `yena_api_key_${envId}`,
+  userId: (envId: string) => `yena_user_id_${envId}`,
+  cacheJobs: (envId: string) => `yena_cache_jobs_${envId}`,
+  cacheStages: (envId: string) => `yena_cache_stages_${envId}`,
+  cacheLists: (envId: string) => `yena_cache_lists_${envId}`,
 } as const;
 
 // Legacy storage keys for migration
@@ -18,6 +56,15 @@ export const LEGACY_STORAGE_KEYS = {
   CACHE_JOBS: 'lumina_cache_jobs',
   CACHE_STAGES: 'lumina_cache_stages',
   CACHE_LISTS: 'lumina_cache_lists',
+} as const;
+
+// Old single-env storage keys (for migration to per-env)
+export const OLD_STORAGE_KEYS = {
+  API_KEY: 'yena_api_key',
+  USER_ID: 'yena_user_id',
+  CACHE_JOBS: 'yena_cache_jobs',
+  CACHE_STAGES: 'yena_cache_stages',
+  CACHE_LISTS: 'yena_cache_lists',
 } as const;
 
 // DOM element IDs

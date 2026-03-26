@@ -1,12 +1,24 @@
-import React from 'react';
-import { APP_DOMAIN } from './constants';
+import React, { useState, useEffect } from 'react';
+import { ACTIVE_ENV_KEY, ENVIRONMENTS, getEnvById } from './constants';
 
 const App: React.FC = () => {
+  const [envLabel, setEnvLabel] = useState('');
+  const [appDomain, setAppDomain] = useState(ENVIRONMENTS[0].domain);
+
+  useEffect(() => {
+    chrome.storage.local.get(ACTIVE_ENV_KEY, (result: Record<string, unknown>) => {
+      const envId = (result[ACTIVE_ENV_KEY] as string) || ENVIRONMENTS[0].id;
+      const env = getEnvById(envId) || ENVIRONMENTS[0];
+      setEnvLabel(env.label);
+      setAppDomain(env.domain);
+    });
+  }, []);
+
   const openDashboard = () => {
     if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
-      chrome.tabs.create({ url: APP_DOMAIN });
+      chrome.tabs.create({ url: appDomain });
     } else {
-      window.open(APP_DOMAIN, '_blank');
+      window.open(appDomain, '_blank');
     }
   };
 
@@ -14,9 +26,16 @@ const App: React.FC = () => {
     <div className="w-[320px] bg-gray-50 min-h-[400px] flex flex-col font-sans text-gray-900">
       {/* Header */}
       <header className="bg-[#4E76D9] text-white p-5 rounded-b-3xl shadow-md">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <span>✦</span> Yena
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <span>✦</span> Yena
+          </h1>
+          {envLabel && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/20 text-white/90">
+              {envLabel}
+            </span>
+          )}
+        </div>
         <p className="text-[#DCE7FF] text-base mt-1">Candidate Clipper</p>
       </header>
 

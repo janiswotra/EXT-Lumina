@@ -3,6 +3,74 @@ import { getText, getSectionByTitle, getListItems, getVisualLines, parseDateRang
 import { parseSalesNavigatorProfile } from './salesNav';
 import { isSalesNavigator } from './shared';
 
+// Module-level constants for experience parsing
+const EXP_EMPLOYMENT_TYPES = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
+const EXP_WORK_LOCATION_TYPES = ['on-site', 'remote', 'hybrid'];
+
+/**
+ * Parses experience data from the lines of a single experience item.
+ * Finds the date line as anchor, then extracts title/company above and location below.
+ */
+function parseExperienceItem(lines: string[]): Experience | null {
+  const dateIdx = lines.findIndex(l => /\d{4}/.test(l) && /[-–]/.test(l));
+  if (dateIdx < 0) return null;
+
+  const dateLine = lines[dateIdx].split(' · ')[0].trim();
+  const dates = parseDateRange(dateLine);
+
+  let title = '';
+  let company = '';
+  let loc = '';
+
+  // Walk backward from date for title and company
+  let si = dateIdx - 1;
+
+  // Skip duration lines ("3 yrs 9 mos") and work location types
+  while (si >= 0) {
+    const lower = lines[si].toLowerCase();
+    if (/^\d+\s*(yr|mo)/i.test(lines[si]) || EXP_WORK_LOCATION_TYPES.includes(lower)) {
+      si--;
+      continue;
+    }
+    break;
+  }
+
+  if (si >= 0) {
+    const prevLine = lines[si];
+    // "Company · Full-time" pattern
+    if (prevLine.includes('·') && EXP_EMPLOYMENT_TYPES.some(t => prevLine.toLowerCase().includes(t))) {
+      company = prevLine.split('·')[0].trim();
+      si--;
+    } else if (EXP_EMPLOYMENT_TYPES.some(t => prevLine.toLowerCase() === t)) {
+      // Bare employment type (grouped role — company comes from parent)
+      si--;
+    }
+    if (si >= 0) {
+      title = lines[si];
+    }
+  }
+
+  // Look forward from date for location
+  if (dateIdx + 1 < lines.length) {
+    const nextLine = lines[dateIdx + 1];
+    const nextLower = nextLine.toLowerCase();
+    if (nextLine.length < 60 &&
+      (EXP_WORK_LOCATION_TYPES.includes(nextLower) ||
+        EXP_WORK_LOCATION_TYPES.some(w => nextLower.includes(w)) ||
+        (nextLine.includes(',') && /^[A-Z]/.test(nextLine)))) {
+      loc = nextLine.split(' · ')[0].trim();
+    }
+  }
+
+  if (!title) return null;
+
+  return {
+    title, company,
+    startDate: dates.startDate, endDate: dates.endDate,
+    location: loc, description: ''
+  };
+}
+
 export const parseProfile = (): CandidateProfile => {
   const url = window.location.href;
 
@@ -380,8 +448,12 @@ export const parseProfile = (): CandidateProfile => {
           bestText = t;
         }
       }
-      // Clean: remove trailing "...more" or "…more"
-      about = bestText.replace(/[…\.]{0,3}\s*more\s*$/i, '').trim();
+      // Clean: remove trailing "...more" and any section header bleed
+      // e.g. "…moreTop skillsPublic Speaking" → truncate at "more" + header
+      about = bestText
+        .replace(/[…\.]{0,3}\s*more\s*(?:Top skills|Skills|Experience|Education|Activity|Certifications|Languages|Volunteering|Organizations|Courses).*$/is, '')
+        .replace(/[…\.]{0,3}\s*more\s*$/i, '')
+        .trim();
     }
   }
 
@@ -389,102 +461,250 @@ export const parseProfile = (): CandidateProfile => {
   const experiences: Experience[] = [];
   const expSection = getSectionByTitle('Experience');
 
-  const employmentTypes = ['full-time', 'part-time', 'contract', 'freelance', 'internship', 'self-employed', 'seasonal', 'temporary'];
-  const workLocationTypes = ['on-site', 'remote', 'hybrid'];
-
   if (expSection) {
-    // Line-based parsing: get ALL text from the section, split by date lines.
-    const allLines = getVisualLines(expSection).filter(t => {
-      const l = t.toLowerCase();
-      return l !== 'experience' && l !== 'show all' &&
-        !/^(see|show)\s*(more|less)/i.test(t) && t.length > 1;
+    // Helper to filter noise lines from experience items
+    const filterExpLines = (el: Element) =>
+      getVisualLines(el).filter(t => {
+        const l = t.toLowerCase();
+        return l !== 'experience' && l !== 'show all' &&
+          !/^(see|show)\s*(more|less)/i.test(t) && t.length > 1;
+      });
+
+    const isDateLine = (l: string) => /\d{4}/.test(l) && /[-–]/.test(l);
+
+    // Strategy 1: 2025/2026 layout — find ALL <li> items with dates across ALL <ul>s
+    // Each <ul> groups roles under one company; <li> items are individual roles
+    const allRoleLis = Array.from(expSection.querySelectorAll('li')).filter(li => {
+      const text = li.textContent || '';
+      return isDateLine(text);
     });
 
-    // Find indices of date lines (each date = one experience entry)
-    const dateIndices: number[] = [];
-    allLines.forEach((line, i) => {
-      if (/\d{4}/.test(line) && /[-–]/.test(line)) dateIndices.push(i);
-    });
+    if (allRoleLis.length > 0) {
+      const processedUls = new Set<Element>();
 
-    let lastBoundary = -1;
+      for (const li of allRoleLis) {
+        const ul = li.closest('ul');
+        if (!ul || processedUls.has(ul)) continue;
+        processedUls.add(ul);
 
-    for (const dateIdx of dateIndices) {
-      const dateLine = allLines[dateIdx].split(' · ')[0].trim();
-      const dates = parseDateRange(dateLine);
-
-      let title = '';
-      let company = '';
-      let loc = '';
-
-      // Look backward from date for title and optional "Company · Employment" line
-      let searchIdx = dateIdx - 1;
-
-      // Skip duration-only lines ("3 yrs 9 mos") and location lines from previous entry
-      while (searchIdx > lastBoundary) {
-        const line = allLines[searchIdx];
-        const lower = line.toLowerCase();
-        if (/^\d+\s*(yr|mo)/i.test(line) || workLocationTypes.includes(lower)) {
-          searchIdx--;
-          continue;
+        // Find company name from the container above the <ul>
+        let groupCompany = '';
+        const container = ul.parentElement;
+        if (container) {
+          const containerLines = getVisualLines(container);
+          const ulLines = new Set(getVisualLines(ul));
+          for (const t of containerLines) {
+            if (ulLines.has(t)) continue;
+            const lower = t.toLowerCase();
+            if (lower === 'experience' || lower === 'show all') continue;
+            if (/^\d+\s*(yr|mo)/i.test(t)) continue;
+            if (EXP_EMPLOYMENT_TYPES.some(et => lower === et)) continue;
+            if (t.includes('·') && EXP_EMPLOYMENT_TYPES.some(et => lower.includes(et))) continue;
+            if (EXP_WORK_LOCATION_TYPES.includes(lower)) continue;
+            if (t.length <= 1) continue;
+            groupCompany = t.split('·')[0].trim();
+            break;
+          }
         }
-        break;
-      }
 
-      if (searchIdx > lastBoundary) {
-        const prevLine = allLines[searchIdx];
-        // Check if it's "Company · Employment-type"
-        if (prevLine.includes('·') && employmentTypes.some(t => prevLine.toLowerCase().includes(t))) {
-          company = prevLine.split('·')[0].trim();
-          searchIdx--;
-        }
-        // Now searchIdx should be the title
-        if (searchIdx > lastBoundary) {
-          title = allLines[searchIdx];
+        // Parse each role <li> in this <ul>
+        for (const roleLi of Array.from(ul.querySelectorAll(':scope > li'))) {
+          if (!isDateLine(roleLi.textContent || '')) continue;
+          const lines = filterExpLines(roleLi);
+          const exp = parseExperienceItem(lines);
+          if (exp) {
+            if (!exp.company) exp.company = groupCompany;
+            experiences.push(exp);
+          }
         }
       }
 
-      // Look forward from date for location
-      const nextIdx = dateIdx + 1;
-      if (nextIdx < allLines.length) {
-        const nextLine = allLines[nextIdx];
-        const nextLower = nextLine.toLowerCase();
-        if (nextLine.length < 60 &&
-          (workLocationTypes.includes(nextLower) ||
-            workLocationTypes.some(w => nextLower.includes(w)) ||
-            (nextLine.includes(',') && /^[A-Z]/.test(nextLine)))) {
-          loc = nextLine.split(' · ')[0].trim();
-          lastBoundary = nextIdx;
-        } else {
-          lastBoundary = dateIdx;
-        }
-      } else {
-        lastBoundary = dateIdx;
-      }
+      // Also handle single entries (not inside <ul>, e.g. Zappyrent)
+      // Scan all section lines for date lines whose titles we haven't found yet
+      const foundTitles = new Set(experiences.map(e => e.title));
+      const allLines = filterExpLines(expSection);
+      for (let i = 0; i < allLines.length; i++) {
+        if (!isDateLine(allLines[i])) continue;
 
-      if (title) {
+        // Walk back to find title
+        let si = i - 1;
+        while (si >= 0) {
+          const lower = allLines[si].toLowerCase();
+          if (/^\d+\s*(yr|mo)/i.test(allLines[si]) || EXP_WORK_LOCATION_TYPES.includes(lower)) { si--; continue; }
+          break;
+        }
+        let company = '';
+        if (si >= 0) {
+          const prevLine = allLines[si];
+          if (prevLine.includes('·') && EXP_EMPLOYMENT_TYPES.some(t => prevLine.toLowerCase().includes(t))) {
+            company = prevLine.split('·')[0].trim();
+            si--;
+          } else if (EXP_EMPLOYMENT_TYPES.some(t => prevLine.toLowerCase() === t)) {
+            si--;
+          }
+        }
+        const title = si >= 0 ? allLines[si] : '';
+        if (!title || foundTitles.has(title)) continue;
+
+        const dateLine = allLines[i].split(' · ')[0].trim();
+        const dates = parseDateRange(dateLine);
+        let loc = '';
+        if (i + 1 < allLines.length) {
+          const nextLine = allLines[i + 1];
+          const nextLower = nextLine.toLowerCase();
+          if (nextLine.length < 60 &&
+            (EXP_WORK_LOCATION_TYPES.includes(nextLower) ||
+              EXP_WORK_LOCATION_TYPES.some(w => nextLower.includes(w)) ||
+              (nextLine.includes(',') && /^[A-Z]/.test(nextLine)))) {
+            loc = nextLine.split(' · ')[0].trim();
+          }
+        }
+
         experiences.push({
           title, company,
           startDate: dates.startDate, endDate: dates.endDate,
           location: loc, description: ''
         });
+        foundTitles.add(title);
       }
     }
 
-    // Fill missing companies: find company from lines before first date (grouped experience)
-    if (experiences.length > 0 && experiences.some(e => !e.company)) {
-      const firstDateIdx = dateIndices[0] || 0;
-      const expTitles = new Set(experiences.map(e => e.title));
+    // Strategy 2: Classic LinkedIn layout — getListItems based parsing
+    if (experiences.length === 0) {
+      const items = getListItems(expSection);
 
-      for (let i = 0; i < firstDateIdx; i++) {
-        const line = allLines[i];
-        if (expTitles.has(line)) continue;
-        if (/^\d+\s*(yr|mo)/i.test(line)) continue;
-        if (employmentTypes.includes(line.toLowerCase())) continue;
-        if (line.length <= 2) continue;
-        const groupCompany = line.split('·')[0].trim();
-        if (groupCompany) {
-          experiences.forEach(e => { if (!e.company) e.company = groupCompany; });
+      if (items.length > 0) {
+        for (const item of items) {
+          const itemLines = filterExpLines(item);
+          const dateCount = itemLines.filter(l => isDateLine(l)).length;
+
+          if (dateCount <= 1) {
+            const exp = parseExperienceItem(itemLines);
+            if (exp) experiences.push(exp);
+          } else {
+            // Grouped company: multiple roles under one company
+            let groupCompany = '';
+            const firstDateIdx = itemLines.findIndex(l => isDateLine(l));
+            for (let i = 0; i < firstDateIdx; i++) {
+              const line = itemLines[i];
+              if (/^\d+\s*(yr|mo)/i.test(line)) continue;
+              if (EXP_EMPLOYMENT_TYPES.includes(line.toLowerCase())) continue;
+              groupCompany = line.split('·')[0].trim();
+              break;
+            }
+
+            const nestedLis = Array.from((item as HTMLElement).querySelectorAll('li'));
+            const roleItems = nestedLis.filter(li => {
+              const lines = getVisualLines(li);
+              return lines.some(l => isDateLine(l));
+            });
+
+            if (roleItems.length > 0) {
+              for (const roleItem of roleItems) {
+                const subLines = filterExpLines(roleItem);
+                const exp = parseExperienceItem(subLines);
+                if (exp) {
+                  if (!exp.company) exp.company = groupCompany;
+                  experiences.push(exp);
+                }
+              }
+            } else {
+              for (let i = 0; i < itemLines.length; i++) {
+                if (!isDateLine(itemLines[i])) continue;
+                const dateLine = itemLines[i].split(' · ')[0].trim();
+                const dates = parseDateRange(dateLine);
+                let title = '';
+                let loc = '';
+                let si = i - 1;
+                while (si >= 0) {
+                  const lower = itemLines[si].toLowerCase();
+                  if (/^\d+\s*(yr|mo)/i.test(itemLines[si]) || EXP_WORK_LOCATION_TYPES.includes(lower)) { si--; continue; }
+                  break;
+                }
+                if (si >= 0) {
+                  const prevLine = itemLines[si];
+                  if (EXP_EMPLOYMENT_TYPES.some(t => prevLine.toLowerCase() === t) ||
+                      (prevLine.includes('·') && EXP_EMPLOYMENT_TYPES.some(t => prevLine.toLowerCase().includes(t)))) { si--; }
+                  if (si >= 0 && itemLines[si] !== groupCompany) title = itemLines[si];
+                }
+                if (i + 1 < itemLines.length) {
+                  const nextLine = itemLines[i + 1];
+                  const nextLower = nextLine.toLowerCase();
+                  if (nextLine.length < 60 &&
+                    (EXP_WORK_LOCATION_TYPES.includes(nextLower) ||
+                      EXP_WORK_LOCATION_TYPES.some(w => nextLower.includes(w)) ||
+                      (nextLine.includes(',') && /^[A-Z]/.test(nextLine)))) {
+                    loc = nextLine.split(' · ')[0].trim();
+                  }
+                }
+                if (title) {
+                  experiences.push({ title, company: groupCompany, startDate: dates.startDate, endDate: dates.endDate, location: loc, description: '' });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Strategy 3: Fallback line-based approach
+    if (experiences.length === 0) {
+      const allLines = filterExpLines(expSection);
+      const dateIndices: number[] = [];
+      allLines.forEach((line, i) => { if (isDateLine(line)) dateIndices.push(i); });
+
+      let lastBoundary = -1;
+      for (const dateIdx of dateIndices) {
+        const dateLine = allLines[dateIdx].split(' · ')[0].trim();
+        const dates = parseDateRange(dateLine);
+        let title = '';
+        let company = '';
+        let loc = '';
+        let searchIdx = dateIdx - 1;
+        while (searchIdx > lastBoundary) {
+          const lower = allLines[searchIdx].toLowerCase();
+          if (/^\d+\s*(yr|mo)/i.test(allLines[searchIdx]) || EXP_WORK_LOCATION_TYPES.includes(lower)) { searchIdx--; continue; }
           break;
+        }
+        if (searchIdx > lastBoundary) {
+          const prevLine = allLines[searchIdx];
+          if (prevLine.includes('·') && EXP_EMPLOYMENT_TYPES.some(t => prevLine.toLowerCase().includes(t))) {
+            company = prevLine.split('·')[0].trim();
+            searchIdx--;
+          }
+          if (searchIdx > lastBoundary) title = allLines[searchIdx];
+        }
+        const nextIdx = dateIdx + 1;
+        if (nextIdx < allLines.length) {
+          const nextLine = allLines[nextIdx];
+          const nextLower = nextLine.toLowerCase();
+          if (nextLine.length < 60 &&
+            (EXP_WORK_LOCATION_TYPES.includes(nextLower) ||
+              EXP_WORK_LOCATION_TYPES.some(w => nextLower.includes(w)) ||
+              (nextLine.includes(',') && /^[A-Z]/.test(nextLine)))) {
+            loc = nextLine.split(' · ')[0].trim();
+            lastBoundary = nextIdx;
+          } else { lastBoundary = dateIdx; }
+        } else { lastBoundary = dateIdx; }
+        if (title) {
+          experiences.push({ title, company, startDate: dates.startDate, endDate: dates.endDate, location: loc, description: '' });
+        }
+      }
+
+      if (experiences.length > 0 && experiences.some(e => !e.company)) {
+        const firstDateIdx = dateIndices[0] || 0;
+        const expTitles = new Set(experiences.map(e => e.title));
+        for (let i = 0; i < firstDateIdx; i++) {
+          const line = allLines[i];
+          if (expTitles.has(line)) continue;
+          if (/^\d+\s*(yr|mo)/i.test(line)) continue;
+          if (EXP_EMPLOYMENT_TYPES.includes(line.toLowerCase())) continue;
+          if (line.length <= 2) continue;
+          const groupCompany = line.split('·')[0].trim();
+          if (groupCompany) {
+            experiences.forEach(e => { if (!e.company) e.company = groupCompany; });
+            break;
+          }
         }
       }
     }

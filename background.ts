@@ -1,4 +1,4 @@
-import { API_BASE_URL, SUPABASE_ANON_KEY, STORAGE_KEYS } from './constants';
+import { ENVIRONMENTS, ACTIVE_ENV_KEY, STORAGE_KEYS, EnvConfig, getEnvById } from './constants';
 import { ExtensionMessage, ApiResponse, SyncMessagesPayload, CheckCandidateStatusPayload } from './types';
 import { normalizeLinkedInUrl, extractLinkedInMemberId } from './utils/linkedin';
 import { validateProfileBeforeSave } from './utils/validation';
@@ -25,8 +25,23 @@ interface ScrapeTask {
 const scrapeQueue: ScrapeTask[] = [];
 let isProcessingQueue = false;
 
-// Storage key for the current user ID
-const USER_ID_STORAGE_KEY = STORAGE_KEYS.USER_ID;
+/**
+ * Get the active environment config from chrome.storage.
+ * Falls back to the first configured environment.
+ */
+async function getActiveEnv(): Promise<EnvConfig> {
+  try {
+    const result = await chrome.storage.local.get(ACTIVE_ENV_KEY);
+    const envId = result[ACTIVE_ENV_KEY] as string;
+    if (envId) {
+      const env = getEnvById(envId);
+      if (env) return env;
+    }
+  } catch (error) {
+    console.error('[Yena Background] Error reading active env:', error);
+  }
+  return ENVIRONMENTS[0];
+}
 
 // Process the queue with delays to prevent detection/throttling
 const processQueue = async () => {
@@ -238,9 +253,13 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
         sendResponse({ success: false, message: 'No API Key provided' });
         return true;
       }
-      chrome.storage.local.set({ yena_api_key: apiKey }, () => {
-        console.log('[Yena Background] API Key saved via SET_API_KEY');
-        sendResponse({ success: true });
+      // Store API key under per-env key
+      getActiveEnv().then((env) => {
+        const storageKey = STORAGE_KEYS.apiKey(env.id);
+        chrome.storage.local.set({ [storageKey]: apiKey }, () => {
+          console.log('[Yena Background] API Key saved for env:', env.id);
+          sendResponse({ success: true });
+        });
       });
       return true;
     }
@@ -250,6 +269,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       handleSyncMessages(message.payload)
         .then(sendResponse)
         .catch((err) => sendResponse({ success: false, message: err.message }));
+      return true;
+    }
+
+    // Handle GET_ACTIVE_ENV request from UI components
+    if (message.type === 'GET_ACTIVE_ENV') {
+      getActiveEnv().then((env) => {
+        sendResponse({ success: true, data: { id: env.id, label: env.label } });
+      });
       return true;
     }
 
@@ -357,56 +384,85 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 }
 
 /**
- * Helper to get headers with API Key
+ * Helper to get headers with API Key for the active environment.
  * Sends both Authorization (for Supabase gateway) and x-api-key (for app auth)
  */
 async function getHeaders(): Promise<Record<string, string>> {
-  const result = await chrome.storage.local.get('yena_api_key');
-  const apiKey = (result.yena_api_key as string) || '';
+  const env = await getActiveEnv();
+  const storageKey = STORAGE_KEYS.apiKey(env.id);
+  const result = await chrome.storage.local.get(storageKey);
+  const apiKey = (result[storageKey] as string) || '';
 
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    'Authorization': `Bearer ${env.supabaseAnonKey}`,
     'x-api-key': apiKey
   };
 }
 
 /**
  * Checks authentication status via /me endpoint.
- * Also stores the user ID for use in profile payloads.
+ * Tries the active environment first, then falls back to all other environments.
+ * When auth succeeds on a different env, switches to that env automatically.
  */
 async function checkAuthStatus(): Promise<ApiResponse> {
   try {
-    const headers = await getHeaders();
-    if (!headers['x-api-key']) {
+    const activeEnv = await getActiveEnv();
+    const storageKey = STORAGE_KEYS.apiKey(activeEnv.id);
+    const result = await chrome.storage.local.get(storageKey);
+    const apiKey = (result[storageKey] as string) || '';
+
+    if (!apiKey) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const response = await fetch(`${API_BASE_URL}/extension-auth`, {
-      method: 'GET',
-      credentials: 'omit',
-      headers
-    });
+    // Try active env first, then all others
+    const envsToTry = [activeEnv, ...ENVIRONMENTS.filter(e => e.id !== activeEnv.id)];
 
-    if (response.status === 200) {
-      const data = await response.json();
+    for (const env of envsToTry) {
+      try {
+        const headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${env.supabaseAnonKey}`,
+          'x-api-key': apiKey
+        };
 
-      // Store the user ID for later use in profile payloads
-      if (data?.userId) {
-        await chrome.storage.local.set({ [USER_ID_STORAGE_KEY]: data.userId });
-        console.log('[Yena Background] Stored user ID:', data.userId);
+        const response = await fetch(`${env.apiBaseUrl}/extension-auth`, {
+          method: 'GET',
+          credentials: 'omit',
+          headers
+        });
+
+        if (response.status === 200) {
+          const data = await response.json();
+
+          // If auth succeeded on a different env, switch to it
+          if (env.id !== activeEnv.id) {
+            console.log('[Yena Background] Key valid on', env.id, '- switching active env');
+            await chrome.storage.local.set({
+              [ACTIVE_ENV_KEY]: env.id,
+              [STORAGE_KEYS.apiKey(env.id)]: apiKey
+            });
+          }
+
+          // Store the user ID under per-env key
+          if (data?.userId) {
+            const userIdKey = STORAGE_KEYS.userId(env.id);
+            await chrome.storage.local.set({ [userIdKey]: data.userId });
+            console.log('[Yena Background] Stored user ID for env', env.id, ':', data.userId);
+          }
+
+          return { success: true, data };
+        }
+      } catch (err) {
+        console.log('[Yena Background] Auth check failed for env', env.id, ':', err);
       }
-
-      return { success: true, data };
     }
 
-    if (response.status === 401 || response.status === 403) {
-      // Clear stored user ID on auth failure
-      await chrome.storage.local.remove(USER_ID_STORAGE_KEY);
-      return { success: false, message: 'Invalid API Key', shouldAuth: true };
-    }
-
-    return { success: false, message: 'Not authenticated' };
+    // All envs failed — clear stored user ID on active env
+    const userIdKey = STORAGE_KEYS.userId(activeEnv.id);
+    await chrome.storage.local.remove(userIdKey);
+    return { success: false, message: 'Invalid API Key', shouldAuth: true };
   } catch (error: any) {
     return { success: false, message: error.message };
   }
@@ -417,8 +473,10 @@ async function checkAuthStatus(): Promise<ApiResponse> {
  */
 async function getCurrentUserId(): Promise<string | null> {
   try {
-    const result = await chrome.storage.local.get(USER_ID_STORAGE_KEY);
-    return (result[USER_ID_STORAGE_KEY] as string) || null;
+    const env = await getActiveEnv();
+    const userIdKey = STORAGE_KEYS.userId(env.id);
+    const result = await chrome.storage.local.get(userIdKey);
+    return (result[userIdKey] as string) || null;
   } catch (error) {
     console.error('[Yena Background] Error getting user ID:', error);
     return null;
@@ -457,6 +515,7 @@ function buildLinkedInIdentityBundle(sourceUrl: string): {
  */
 async function checkCandidateStatus(payload: CheckCandidateStatusPayload | string): Promise<ApiResponse> {
   try {
+    const env = await getActiveEnv();
     const headers = await getHeaders();
     if (!headers['x-api-key']) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
@@ -491,7 +550,7 @@ async function checkCandidateStatus(payload: CheckCandidateStatusPayload | strin
       currentCompany
     });
 
-    const url = new URL(`${API_BASE_URL}/linkedin-status`);
+    const url = new URL(`${env.apiBaseUrl}/linkedin-status`);
     url.searchParams.append('sourceUrl', identityBundle.normalizedUrl);
 
     Array.from(sourceUrls).forEach((value) => {
@@ -538,12 +597,13 @@ async function checkCandidateStatus(payload: CheckCandidateStatusPayload | strin
  */
 async function fetchJobs(): Promise<ApiResponse> {
   try {
+    const env = await getActiveEnv();
     const headers = await getHeaders();
     if (!headers['x-api-key']) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const endpoint = `${API_BASE_URL}/extension-jobs?_ts=${Date.now()}`;
+    const endpoint = `${env.apiBaseUrl}/extension-jobs?_ts=${Date.now()}`;
     console.log('[Yena Background] Fetching jobs from:', endpoint);
 
     const response = await fetch(endpoint, {
@@ -579,12 +639,13 @@ async function fetchJobs(): Promise<ApiResponse> {
  */
 async function fetchStages(jobId?: string): Promise<ApiResponse> {
   try {
+    const env = await getActiveEnv();
     const headers = await getHeaders();
     if (!headers['x-api-key']) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const endpointUrl = new URL(`${API_BASE_URL}/extension-stages`);
+    const endpointUrl = new URL(`${env.apiBaseUrl}/extension-stages`);
     if (jobId) {
       endpointUrl.searchParams.set('jobId', jobId);
     }
@@ -621,12 +682,13 @@ async function fetchStages(jobId?: string): Promise<ApiResponse> {
  */
 async function fetchLists(): Promise<ApiResponse> {
   try {
+    const env = await getActiveEnv();
     const headers = await getHeaders();
     if (!headers['x-api-key']) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
     }
 
-    const endpoint = `${API_BASE_URL}/extension-lists?_ts=${Date.now()}`;
+    const endpoint = `${env.apiBaseUrl}/extension-lists?_ts=${Date.now()}`;
     const response = await fetch(endpoint, {
       method: 'GET',
       credentials: 'omit',
@@ -656,6 +718,7 @@ async function fetchLists(): Promise<ApiResponse> {
  */
 async function handleSaveCandidate(body: any): Promise<ApiResponse> {
   try {
+    const env = await getActiveEnv();
     const headers = await getHeaders();
     if (!headers['x-api-key']) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
@@ -714,7 +777,7 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
 
     console.log('[Yena Background] Transformed payload:', transformedPayload);
 
-    const response = await fetch(`${API_BASE_URL}/linkedin-import`, {
+    const response = await fetch(`${env.apiBaseUrl}/linkedin-import`, {
       method: 'POST',
       credentials: 'omit',
       headers,
@@ -746,6 +809,7 @@ async function handleSaveCandidate(body: any): Promise<ApiResponse> {
  */
 async function handleSyncMessages(payload: SyncMessagesPayload): Promise<ApiResponse> {
   try {
+    const env = await getActiveEnv();
     const headers = await getHeaders();
     if (!headers['x-api-key']) {
       return { success: false, message: 'Missing API Key', shouldAuth: true };
@@ -757,7 +821,7 @@ async function handleSyncMessages(payload: SyncMessagesPayload): Promise<ApiResp
       conversationId: payload.conversationId,
     });
 
-    const endpoint = `${API_BASE_URL}/linkedin-messages-sync`;
+    const endpoint = `${env.apiBaseUrl}/linkedin-messages-sync`;
     console.log('[Yena Background] POST to:', endpoint);
 
     const response = await fetch(endpoint, {

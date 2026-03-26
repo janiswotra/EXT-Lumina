@@ -1,38 +1,39 @@
 /**
  * Content script injected into app.yena.ai
  * Acts as a bridge between:
- * - Web App (window.postMessage) ↔ Background Script (chrome.runtime.sendMessage)
+ * - Web App (window.postMessage) <-> Background Script (chrome.runtime.sendMessage)
  *
  * This approach works for both local development and production because
  * it doesn't rely on the extension ID.
  */
 
-import { APP_DOMAIN, DOM_IDS } from './constants';
+import { ALL_APP_DOMAINS, ACTIVE_ENV_KEY, OLD_STORAGE_KEYS, STORAGE_KEYS, DOM_IDS, getEnvByDomain, ENVIRONMENTS } from './constants';
 
-const ALLOWED_ORIGINS = [APP_DOMAIN, 'http://localhost:3000', 'http://localhost:5173'];
+const ALLOWED_ORIGINS = [...ALL_APP_DOMAINS, 'http://localhost:3000', 'http://localhost:5173'];
 
 console.log('[Yena contentApp] Script loaded on:', window.location.href);
 
 // ============================================
-// 1. Storage Migration (lumina_ → yena_)
+// 1. Storage Migration (lumina_ -> yena_, then yena_ -> per-env)
 // ============================================
 const migrateStorageKeys = () => {
-    const migrations: Record<string, string> = {
-        'lumina_api_key': 'yena_api_key',
-        'lumina_user_id': 'yena_user_id',
-        'lumina_cache_jobs': 'yena_cache_jobs',
-        'lumina_cache_stages': 'yena_cache_stages',
-        'lumina_cache_lists': 'yena_cache_lists',
+    // Step 1: lumina_ -> yena_ (old single-env keys)
+    const luminaMigrations: Record<string, string> = {
+        'lumina_api_key': OLD_STORAGE_KEYS.API_KEY,
+        'lumina_user_id': OLD_STORAGE_KEYS.USER_ID,
+        'lumina_cache_jobs': OLD_STORAGE_KEYS.CACHE_JOBS,
+        'lumina_cache_stages': OLD_STORAGE_KEYS.CACHE_STAGES,
+        'lumina_cache_lists': OLD_STORAGE_KEYS.CACHE_LISTS,
     };
 
-    const oldKeys = Object.keys(migrations);
+    const oldKeys = Object.keys(luminaMigrations);
     chrome.storage.local.get(oldKeys, (result: Record<string, unknown>) => {
         const updates: Record<string, unknown> = {};
         const keysToRemove: string[] = [];
 
         for (const oldKey of oldKeys) {
             if (result[oldKey] !== undefined) {
-                const newKey = migrations[oldKey];
+                const newKey = luminaMigrations[oldKey];
                 updates[newKey] = result[oldKey];
                 keysToRemove.push(oldKey);
             }
@@ -41,7 +42,41 @@ const migrateStorageKeys = () => {
         if (Object.keys(updates).length > 0) {
             chrome.storage.local.set(updates, () => {
                 chrome.storage.local.remove(keysToRemove, () => {
-                    console.log('[Yena contentApp] Migrated storage keys:', keysToRemove);
+                    console.log('[Yena contentApp] Migrated lumina_ storage keys:', keysToRemove);
+                    // After lumina migration, run per-env migration
+                    migrateToPerEnvKeys();
+                });
+            });
+        } else {
+            // No lumina keys, still try per-env migration
+            migrateToPerEnvKeys();
+        }
+    });
+};
+
+/**
+ * Migrate old single-env yena_api_key / yena_user_id to per-env keys.
+ * Copies to the default (first) environment and removes old keys.
+ */
+const migrateToPerEnvKeys = () => {
+    const defaultEnvId = ENVIRONMENTS[0].id;
+    chrome.storage.local.get([OLD_STORAGE_KEYS.API_KEY, OLD_STORAGE_KEYS.USER_ID], (result: Record<string, unknown>) => {
+        const updates: Record<string, unknown> = {};
+        const keysToRemove: string[] = [];
+
+        if (result[OLD_STORAGE_KEYS.API_KEY]) {
+            updates[STORAGE_KEYS.apiKey(defaultEnvId)] = result[OLD_STORAGE_KEYS.API_KEY];
+            keysToRemove.push(OLD_STORAGE_KEYS.API_KEY);
+        }
+        if (result[OLD_STORAGE_KEYS.USER_ID]) {
+            updates[STORAGE_KEYS.userId(defaultEnvId)] = result[OLD_STORAGE_KEYS.USER_ID];
+            keysToRemove.push(OLD_STORAGE_KEYS.USER_ID);
+        }
+
+        if (Object.keys(updates).length > 0) {
+            chrome.storage.local.set(updates, () => {
+                chrome.storage.local.remove(keysToRemove, () => {
+                    console.log('[Yena contentApp] Migrated to per-env keys:', keysToRemove, '->', Object.keys(updates));
                 });
             });
         }
@@ -49,7 +84,22 @@ const migrateStorageKeys = () => {
 };
 
 // ============================================
-// 2. DOM Marker Injection (for extension detection)
+// 2. Domain Detection & Active Env Storage
+// ============================================
+const detectAndStoreEnv = () => {
+    const origin = window.location.origin;
+    const env = getEnvByDomain(origin);
+    if (env) {
+        chrome.storage.local.set({ [ACTIVE_ENV_KEY]: env.id }, () => {
+            console.log('[Yena contentApp] Active environment set to:', env.id, '(' + env.label + ')');
+        });
+    } else {
+        console.log('[Yena contentApp] No matching environment for origin:', origin);
+    }
+};
+
+// ============================================
+// 3. DOM Marker Injection (for extension detection)
 // ============================================
 const injectMarker = () => {
     const version = chrome.runtime.getManifest().version;
@@ -81,14 +131,16 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         injectMarker();
         migrateStorageKeys();
+        detectAndStoreEnv();
     });
 } else {
     injectMarker();
     migrateStorageKeys();
+    detectAndStoreEnv();
 }
 
 // ============================================
-// 3. Listen for messages FROM the web app
+// 4. Listen for messages FROM the web app
 // ============================================
 window.addEventListener('message', async (event) => {
     // Security: validate origin
@@ -170,7 +222,7 @@ window.addEventListener('message', async (event) => {
 });
 
 // ============================================
-// 4. Listen for results FROM background script
+// 5. Listen for results FROM background script
 // ============================================
 chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: any) => {
     console.log('[Yena contentApp] Message from background:', message.type, message);

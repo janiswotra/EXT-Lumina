@@ -3,6 +3,7 @@ import { Button } from './Button';
 import { PickerModal, PickerOption } from './ui/PickerModal';
 import { CandidateProfile, Job, Stage, List } from '../types';
 import { cn } from '../utils/cn';
+import { ACTIVE_ENV_KEY, STORAGE_KEYS, ENVIRONMENTS, getEnvById } from '../constants';
 
 type CandidateData = CandidateProfile;
 
@@ -14,6 +15,7 @@ interface SidebarProps {
     onSave: (jobId?: string, stageId?: string, listId?: string) => Promise<boolean>;
     isLoading: boolean;
     isExisting?: boolean;
+    onDisconnect?: () => void;
 }
 
 
@@ -135,8 +137,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onUpdate,
     onSave,
     isLoading,
-    isExisting = false
+    isExisting = false,
+    onDisconnect
 }) => {
+    // Active environment
+    const [activeEnvId, setActiveEnvId] = useState<string>(ENVIRONMENTS[0].id);
+    const [activeEnvLabel, setActiveEnvLabel] = useState<string>(ENVIRONMENTS[0].label);
+
     // Form Data
     const [formData, setFormData] = useState<CandidateData>(data);
     const [isSuccess, setIsSuccess] = useState(false);
@@ -165,6 +172,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     useEffect(() => {
         setFormData(data);
     }, [data]);
+
+    // Load active env on open
+    useEffect(() => {
+        if (isOpen) {
+            chrome.storage.local.get(ACTIVE_ENV_KEY, (result: Record<string, unknown>) => {
+                const envId = (result[ACTIVE_ENV_KEY] as string) || ENVIRONMENTS[0].id;
+                setActiveEnvId(envId);
+                const env = getEnvById(envId);
+                if (env) setActiveEnvLabel(env.label);
+            });
+        }
+    }, [isOpen]);
 
     // Cache Helpers
     const CACHE_DURATION = 60 * 60 * 1000; // 1 Hour
@@ -244,17 +263,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     const fetchJobs = useCallback((forceRefresh = false) =>
         fetchCachedData<Job>({
-            messageType: 'GET_JOBS', cacheKey: 'yena_cache_jobs', dataKey: 'jobs',
+            messageType: 'GET_JOBS', cacheKey: STORAGE_KEYS.cacheJobs(activeEnvId), dataKey: 'jobs',
             setData: setJobs, setLoading: setLoadingJobs, forceRefresh,
         }),
-    [fetchCachedData]);
+    [fetchCachedData, activeEnvId]);
 
     const fetchStages = useCallback((forceRefresh = false) =>
         fetchCachedData<Stage>({
-            messageType: 'GET_STAGES', cacheKey: 'yena_cache_stages', dataKey: 'stages',
+            messageType: 'GET_STAGES', cacheKey: STORAGE_KEYS.cacheStages(activeEnvId), dataKey: 'stages',
             setData: setStages, setLoading: setLoadingStages, forceRefresh,
         }),
-    [fetchCachedData]);
+    [fetchCachedData, activeEnvId]);
 
     const fetchStagesForJob = useCallback(async (jobId: string, resetSelection = true): Promise<void> => {
         if (resetSelection) setSelectedStage(null);
@@ -277,10 +296,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     const fetchLists = useCallback((forceRefresh = false) =>
         fetchCachedData<List>({
-            messageType: 'GET_LISTS', cacheKey: 'yena_cache_lists', dataKey: 'lists',
+            messageType: 'GET_LISTS', cacheKey: STORAGE_KEYS.cacheLists(activeEnvId), dataKey: 'lists',
             setData: setLists, setLoading: setLoadingLists, forceRefresh,
         }),
-    [fetchCachedData]);
+    [fetchCachedData, activeEnvId]);
 
     const loadMetadata = useCallback(async (forceRefresh = true): Promise<void> => {
         await Promise.all([
@@ -374,6 +393,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         />
                     </div>
                     <span className="font-semibold text-xl text-[#181c25]">Yena</span>
+                    <span className={cn(
+                        "text-xs font-medium px-2 py-0.5 rounded-full",
+                        activeEnvId === 'prod'
+                            ? "bg-[#dcfce7] text-[#166534] border border-[#bbf7d0]"
+                            : "bg-[#fef3c7] text-[#92400e] border border-[#fde68a]"
+                    )}>
+                        {activeEnvLabel}
+                    </span>
                 </div>
                 <div className="flex items-center gap-2">
                     <div className={cn(
@@ -393,6 +420,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             {isExisting ? 'In Yena' : 'New Candidate'}
                         </span>
                     </div>
+                    {onDisconnect && (
+                        <button
+                            onClick={onDisconnect}
+                            title="Disconnect API Key"
+                            className="p-2 rounded-lg hover:bg-[#fef2f2] text-[#687182] hover:text-[#dc2626] transition-colors"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+                            </svg>
+                        </button>
+                    )}
                     <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#f5f7fa] text-[#687182] hover:text-[#181c25] transition-colors">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />

@@ -8,6 +8,7 @@ import { ApiResponse, ParseConfidence } from './types';
 import { isExtensionContextValid, safeSendMessage } from './utils/chrome';
 import { normalizeLinkedInUrl, extractLinkedInMemberId, isProfileUrl } from './utils/linkedin';
 import { hasMeaningfulProfileSignals } from './utils/validation';
+import { ENVIRONMENTS, STORAGE_KEYS } from './constants';
 
 type ViewMode = 'hidden' | 'preview' | 'full';
 
@@ -675,6 +676,14 @@ export const LinkedInInjector: React.FC = () => {
             onSave={handleSave}
             isLoading={loading}
             isExisting={isExisting}
+            onDisconnect={() => {
+              // Clear API key for all envs and reset auth state
+              const keysToRemove = ENVIRONMENTS.map(e => STORAGE_KEYS.apiKey(e.id));
+              chrome.storage.local.remove(keysToRemove, () => {
+                console.log('[Yena] API key cleared, returning to auth screen');
+                setAuthStatus('MISSING_KEY');
+              });
+            }}
           />
         </>
       )}
