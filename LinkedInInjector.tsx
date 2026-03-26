@@ -1,116 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { parseProfile, parseProfileWithRetry, waitForProfileToLoad } from './utils/parser';
+import { parseProfile, parseProfileWithRetry, waitForProfileToLoad } from './utils/parsers';
 import { Sidebar } from './components/Sidebar';
 import { Preview } from './components/Preview';
 import { Toast } from './components/Toast';
 import { AuthScreen } from './components/AuthScreen';
 import { ApiResponse, ParseConfidence } from './types';
-
-// Fix: Declare chrome variable to resolve TS error
-declare const chrome: any;
+import { isExtensionContextValid, safeSendMessage } from './utils/chrome';
+import { normalizeLinkedInUrl, extractLinkedInMemberId, isProfileUrl } from './utils/linkedin';
+import { hasMeaningfulProfileSignals } from './utils/validation';
+import { ENVIRONMENTS, STORAGE_KEYS } from './constants';
 
 type ViewMode = 'hidden' | 'preview' | 'full';
-
-/**
- * Helper to check if the extension context is still valid.
- * Returns false if the extension was reloaded/updated while this script was running.
- */
-const isExtensionContextValid = (): boolean => {
-  try {
-    // This will throw if the extension context is invalidated
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
-      return true;
-    }
-    return false;
-  } catch (e) {
-    return false;
-  }
-};
-
-/**
- * Safely send a message to the background script.
- * Returns null if the extension context is invalid.
- */
-const safeSendMessage = (message: any): Promise<any> => {
-  return new Promise((resolve) => {
-    if (!isExtensionContextValid()) {
-      resolve(null);
-      return;
-    }
-
-    try {
-      chrome.runtime.sendMessage(message, (response: any) => {
-        if (chrome.runtime.lastError) {
-          // Handle the error silently - context may have been invalidated
-          resolve(null);
-          return;
-        }
-        resolve(response);
-      });
-    } catch (e) {
-      resolve(null);
-    }
-  });
-};
-
-/**
- * Normalize LinkedIn URL for consistent matching.
- * Removes query params/hash and canonicalizes profile-like paths so
- * /in/{slug}/recent-activity/* resolves to /in/{slug}.
- */
-const normalizeLinkedInUrl = (url: string): string => {
-  try {
-    const parsed = new URL(url);
-    const segments = parsed.pathname.split('/').filter(Boolean);
-    let canonicalPath = parsed.pathname;
-
-    if (segments[0] === 'in' && segments[1]) {
-      canonicalPath = `/in/${segments[1]}`;
-    } else if (segments[0] === 'sales' && (segments[1] === 'lead' || segments[1] === 'people') && segments[2]) {
-      const token = (segments[2] || '').split(',')[0];
-      canonicalPath = `/sales/${segments[1]}/${token}`;
-    } else if (segments[0] === 'talent' && segments[1] === 'profile' && segments[2]) {
-      canonicalPath = `/talent/profile/${segments[2]}`;
-    }
-
-    if (canonicalPath.endsWith('/')) canonicalPath = canonicalPath.slice(0, -1);
-    return `https://www.linkedin.com${canonicalPath}`;
-  } catch {
-    return url;
-  }
-};
-
-const extractLinkedInMemberId = (url: string): string | null => {
-  const normalized = normalizeLinkedInUrl(url || '');
-
-  const profileMatch = normalized.match(/\/in\/(A[A-Z][a-zA-Z0-9_-]{20,})/);
-  if (profileMatch) return profileMatch[1];
-
-  const salesMatch = normalized.match(/\/sales\/(?:lead|people)\/([^/?#]+)/);
-  if (!salesMatch) return null;
-
-  const token = (salesMatch[1] || '').split(',')[0];
-  if (/^A[A-Z][a-zA-Z0-9_-]{20,}$/.test(token)) return token;
-  return null;
-};
-
-const isProfileUrl = (url: string): boolean => {
-  return url.includes('/in/') || url.includes('/sales/lead/') || url.includes('/sales/people/') || url.includes('/talent/profile/');
-};
-
-const hasMeaningfulProfileSignals = (profile: any): boolean => {
-  const signals = [
-    !!profile?.headline?.trim(),
-    !!profile?.location?.trim(),
-    !!profile?.currentCompany?.trim(),
-    (profile?.about || '').trim().length > 20,
-    Array.isArray(profile?.experiences) && profile.experiences.length > 0,
-    Array.isArray(profile?.educations) && profile.educations.length > 0,
-    Array.isArray(profile?.skills) && profile.skills.length > 0,
-    typeof profile?.profilePictureUrl === 'string' && profile.profilePictureUrl.startsWith('http')
-  ];
-  return signals.filter(Boolean).length >= 2;
-};
 
 const canSaveProfile = (profile: any): { ok: boolean; reason?: string } => {
   const firstName = (profile?.firstName || '').trim();
@@ -272,7 +172,22 @@ const mergeProfileReliably = (prev: any, next: any, mode: 'prefetch' | 'deep'): 
       : (prev.educations || []),
     skills: Array.isArray(sanitizedNext.skills) && sanitizedNext.skills.length > 0
       ? sanitizedNext.skills
-      : (prev.skills || [])
+      : (prev.skills || []),
+    languages: Array.isArray(sanitizedNext.languages) && sanitizedNext.languages.length > 0
+      ? sanitizedNext.languages
+      : (prev.languages || []),
+    certifications: Array.isArray(sanitizedNext.certifications) && sanitizedNext.certifications.length > 0
+      ? sanitizedNext.certifications
+      : (prev.certifications || []),
+    courses: Array.isArray(sanitizedNext.courses) && sanitizedNext.courses.length > 0
+      ? sanitizedNext.courses
+      : (prev.courses || []),
+    organizations: Array.isArray(sanitizedNext.organizations) && sanitizedNext.organizations.length > 0
+      ? sanitizedNext.organizations
+      : (prev.organizations || []),
+    recommendations: Array.isArray(sanitizedNext.recommendations) && sanitizedNext.recommendations.length > 0
+      ? sanitizedNext.recommendations
+      : (prev.recommendations || [])
   };
 
   if (!result.currentCompany && result.experiences?.length > 0) {
@@ -290,15 +205,12 @@ const mergeProfileReliably = (prev: any, next: any, mode: 'prefetch' | 'deep'): 
 export const LinkedInInjector: React.FC = () => {
   // Start hidden (show floating button only)
   const [viewMode, setViewMode] = useState<ViewMode>('hidden');
+  const viewModeRef = useRef<ViewMode>('hidden');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
-  // State to track if we've already attempted scraping for the current URL
-  const [hasScrapedCurrentUrl, setHasScrapedCurrentUrl] = useState(false);
-
   // NEW: Track data fetching state for better UX
   const [isFetchingData, setIsFetchingData] = useState(false);
-  const [, setIsHydratingDeepData] = useState(false);
 
   // Track current URL to detect changes
   const currentUrlRef = useRef(window.location.href);
@@ -335,7 +247,6 @@ export const LinkedInInjector: React.FC = () => {
 
   // Function to reset all profile state for new URL
   const resetProfileState = useCallback(() => {
-    setHasScrapedCurrentUrl(false);
     setIsExisting(false);
     setIsFetchingData(false);
     // Invalidate any pending status check by clearing the ref
@@ -361,6 +272,11 @@ export const LinkedInInjector: React.FC = () => {
       linkedinUrl: window.location.href,
     });
   }, []);
+
+  // Keep viewModeRef in sync
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
 
   // Check Auth on Mount
   useEffect(() => {
@@ -428,15 +344,18 @@ export const LinkedInInjector: React.FC = () => {
         return;
       }
 
+      const urlAtStart = window.location.href;
       setIsFetchingData(true);
 
       try {
         // Wait for profile anchors to reduce partial parses on LinkedIn SPA transitions
         const isReady = await waitForProfileToLoad(5000);
+        // Guard: abort if URL changed during async wait
+        if (!isMounted || window.location.href !== urlAtStart) return;
         const data = isReady
           ? await parseProfileWithRetry(3, 250, false)
           : await parseProfileWithRetry(1, 100, false);
-        if (!isMounted) return;
+        if (!isMounted || window.location.href !== urlAtStart) return;
 
         const prefetchData = sanitizeProfileTopFields(data);
         // STEP 2: Update UI immediately with parsed data
@@ -481,8 +400,8 @@ export const LinkedInInjector: React.FC = () => {
             if (isMounted && isResponseForCurrentProfile && res && res.success && res.data) {
               setIsExisting(!!res.data.exists);
             }
-          }).catch(() => {
-            // Silent fail - existence check is optional
+          }).catch((e) => {
+            console.warn('[Yena]', e);
             if (isMounted && pendingStatusCheckUrlRef.current === normalizedUrl) {
               setIsExisting(false);
             }
@@ -533,7 +452,7 @@ export const LinkedInInjector: React.FC = () => {
       }
 
       // Lazy-load content polling ONLY in full mode AND only if data changed
-      if (viewMode === 'full' && hasInitiallyLoaded) {
+      if (viewModeRef.current === 'full' && hasInitiallyLoaded) {
         try {
           const data = parseProfile();
           setProfileData((prev: any) => {
@@ -564,22 +483,23 @@ export const LinkedInInjector: React.FC = () => {
         clearInterval(pollTimer);
       }
     };
-  }, [viewMode, hasScrapedCurrentUrl, resetProfileState]);
+  }, [resetProfileState]);
 
   // Deep hydration after user opens full sidebar:
   // prefer accuracy over speed and update only with reliable values.
   useEffect(() => {
     if (viewMode !== 'full') return;
     let cancelled = false;
+    const urlAtStart = window.location.href;
 
     const hydrateDeep = async () => {
-      setIsHydratingDeepData(true);
       try {
         const isReady = await waitForProfileToLoad(6000);
+        if (cancelled || window.location.href !== urlAtStart) return;
         const deepData = isReady
           ? await parseProfileWithRetry(4, 300, false)
           : await parseProfileWithRetry(2, 150, false);
-        if (cancelled) return;
+        if (cancelled || window.location.href !== urlAtStart) return;
 
         setProfileData((prev: any) => ({
           ...mergeProfileReliably(prev, deepData, 'deep'),
@@ -588,9 +508,7 @@ export const LinkedInInjector: React.FC = () => {
           linkedinUrl: window.location.href
         }));
       } catch {
-        // ignore
-      } finally {
-        if (!cancelled) setIsHydratingDeepData(false);
+        // ignore — deep hydration is best-effort
       }
     };
 
@@ -665,7 +583,7 @@ export const LinkedInInjector: React.FC = () => {
       }
 
     } catch (e: any) {
-      console.error('[Lumina] Save Exception:', e);
+      console.error('[Yena] Save Exception:', e);
       setToast({ msg: e.message || 'Error occurred.', type: 'error' });
       return false;
     } finally {
@@ -675,21 +593,46 @@ export const LinkedInInjector: React.FC = () => {
 
   return (
     <>
-      {/* Floating Action Button Trigger */}
+      {/* Sticky Icon Trigger — offset from right edge */}
       {viewMode === 'hidden' && (
         <button
           onClick={toggleView}
-          className="fixed right-0 top-1/2 transform -translate-y-1/2 z-[2147483647] bg-[#5F86E5] text-white p-3 rounded-l-2xl shadow-2xl flex items-center gap-2 hover:bg-[#4E76D9] transition-colors cursor-pointer border-2 border-white pointer-events-auto"
+          style={{
+            position: 'fixed',
+            right: '12px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 2147483647,
+            width: '38px',
+            height: '38px',
+            borderRadius: '11px',
+            backgroundColor: '#ff6a26',
+            boxShadow: '0 2px 12px rgba(255,106,38,0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            pointerEvents: 'auto',
+            border: 'none',
+            padding: 0,
+            outline: 'none',
+            transition: 'box-shadow 0.2s, transform 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.boxShadow = '0 4px 20px rgba(255,106,38,0.5)';
+            e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.boxShadow = '0 2px 12px rgba(255,106,38,0.4)';
+            e.currentTarget.style.transform = 'translateY(-50%)';
+          }}
           title="Add to Yena"
         >
           <img
             src={chrome.runtime.getURL('icons/icon-32.png')}
             alt="Yena"
-            className="w-5 h-5 object-contain"
+            style={{ width: '22px', height: '22px', objectFit: 'contain' }}
           />
-          <span className="font-bold whitespace-nowrap">
-            Yena
-          </span>
         </button>
       )}
 
@@ -717,7 +660,7 @@ export const LinkedInInjector: React.FC = () => {
               />
               <button
                 onClick={() => setViewMode('hidden')}
-                className="fixed right-5 top-[350px] text-xs text-gray-400 hover:text-white underline z-[2147483647] pointer-events-auto bg-black/50 px-2 py-1 rounded"
+                className="fixed right-5 top-[350px] text-sm text-[#687182] hover:text-[#181c25] underline z-[2147483647] pointer-events-auto bg-white/80 shadow-sm border border-[#dde1e8] px-2 py-1 rounded"
               >
                 Close Preview
               </button>
@@ -733,6 +676,14 @@ export const LinkedInInjector: React.FC = () => {
             onSave={handleSave}
             isLoading={loading}
             isExisting={isExisting}
+            onDisconnect={() => {
+              // Clear API key for all envs and reset auth state
+              const keysToRemove = ENVIRONMENTS.map(e => STORAGE_KEYS.apiKey(e.id));
+              chrome.storage.local.remove(keysToRemove, () => {
+                console.log('[Yena] API key cleared, returning to auth screen');
+                setAuthStatus('MISSING_KEY');
+              });
+            }}
           />
         </>
       )}

@@ -2,65 +2,67 @@
 export default {
   content: [
     "./index.html",
-    "./**/*.{js,ts,jsx,tsx}",
+    "./*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./utils/**/*.{ts,tsx}",
   ],
   theme: {
     extend: {
       colors: {
-        // Attio Deep Space Palette
+        // Yena Light Palette
         attio: {
           bg: {
-            base: '#09090b',       // Absolute darkest
-            surface: '#1A1D21',    // Card/elevated surfaces
-            elevated: '#1F2125',   // Dropdowns/popovers
-            hover: '#27282B',      // Hover states
-            active: '#27282B',     // Active states
+            base: '#f7f8fa',       // Page background
+            surface: '#ffffff',    // Card/elevated surfaces
+            elevated: '#fafbfc',   // Dropdowns/popovers
+            hover: '#f5f7fa',      // Hover states
+            active: '#f5f7fa',     // Active states
           },
           text: {
-            primary: '#EEEFF1',    // Primary text
-            secondary: '#A2A4A7',  // Muted text
-            tertiary: 'rgba(255, 255, 255, 0.55)', // Subtle text
-            quaternary: 'rgba(255, 255, 255, 0.29)', // Placeholder
+            primary: '#181c25',    // Primary text
+            secondary: '#4a5364',  // Muted text
+            tertiary: '#687182',   // Subtle text
+            quaternary: '#7e8799', // Placeholder
           },
           border: {
-            default: '#2F3033',    // Default borders
-            hover: '#46474A',      // Hover borders
-            subtle: '#27282B',     // Subtle borders
+            default: '#dde1e8',    // Default borders
+            hover: '#c5cad4',      // Hover borders
+            subtle: '#e8ebf1',     // Subtle borders
           },
           accent: {
-            DEFAULT: '#864AFF',    // Primary purple
-            hover: '#9B69FF',      // Purple hover
-            muted: '#B28CFF',      // Muted purple
-            glow: 'rgba(134, 74, 255, 0.32)', // Glow effect
+            DEFAULT: '#ff6a26',    // Primary orange
+            hover: '#e85814',      // Orange hover
+            muted: '#ff9a6c',      // Muted orange
+            glow: 'rgba(255, 106, 38, 0.2)', // Glow effect
           },
           // Status colors
           success: {
-            DEFAULT: '#02AD6E',
-            bg: 'rgb(29, 64, 52)',
-            border: 'rgb(36, 74, 58)',
-            text: '#A7F2CF',
+            DEFAULT: '#059669',
+            bg: '#ecfdf5',
+            border: '#a7f3d0',
+            text: '#065f46',
           },
           warning: {
-            DEFAULT: '#FFD269',
-            bg: 'rgb(58, 45, 18)',
-            border: 'rgb(82, 56, 23)',
-            text: '#FFD269',
+            DEFAULT: '#d97706',
+            bg: '#fffbeb',
+            border: '#fde68a',
+            text: '#92400e',
           },
           error: {
-            DEFAULT: '#ED3B3B',
-            hover: '#FF5454',
-            bg: 'rgb(105, 38, 35)',
+            DEFAULT: '#dc2626',
+            hover: '#ef4444',
+            bg: '#fef2f2',
           },
           blue: {
-            DEFAULT: '#266DF0',
-            bg: 'rgb(29, 46, 85)',
-            border: 'rgb(43, 62, 109)',
-            text: '#C2D6FF',
+            DEFAULT: '#2563eb',
+            bg: '#eff6ff',
+            border: '#bfdbfe',
+            text: '#1e40af',
           },
           pink: {
-            bg: 'rgb(78, 27, 48)',
-            border: 'rgb(100, 38, 64)',
-            text: '#FFBFDA',
+            bg: '#fdf2f8',
+            border: '#fbcfe8',
+            text: '#9d174d',
           },
         },
       },
@@ -71,17 +73,17 @@ export default {
         'attio': '-0.02em',
       },
       boxShadow: {
-        // Attio button shadows
-        'attio-btn': 'inset 0px 0px 0px 1px #2F3033, 0px 0px 2px 0px rgb(0, 0, 0), 0px 1px 3px 0px rgba(0, 0, 0, 0.08)',
-        'attio-btn-accent': 'inset 0px 0px 0px 1px rgba(255, 255, 255, 0.1), 0px 2px 4px -2px rgba(134, 74, 255, 0.12), 0px 3px 6px -2px rgba(134, 74, 255, 0.08)',
-        'attio-btn-error': 'inset 0px 0px 0px 1px rgba(255, 255, 255, 0.1), 0px 2px 4px -2px rgba(105, 38, 35, 0.12), 0px 3px 6px -2px rgba(105, 38, 35, 0.08)',
-        // Attio popup/card shadows
-        'attio-popup': 'rgb(47, 48, 51) 0px 0px 0px 1px inset, rgba(0, 0, 0, 0.16) 0px 0px 0px 1px, rgba(0, 0, 0, 0.48) 0px 4px 8px -4px, rgba(0, 0, 0, 0.64) 0px 4px 12px -2px',
-        'attio-tooltip': 'rgb(47, 48, 51) 0px 0px 0px 1px inset, rgb(0, 0, 0) 0px 0px 2px 0px, rgba(0, 0, 0, 0.08) 0px 1px 3px 0px',
+        // Button shadows (light)
+        'attio-btn': '0px 1px 2px rgba(0, 0, 0, 0.05), inset 0px 0px 0px 1px #dde1e8',
+        'attio-btn-accent': '0px 1px 3px rgba(37, 99, 235, 0.15), 0px 1px 2px rgba(0, 0, 0, 0.05)',
+        'attio-btn-error': '0px 1px 3px rgba(220, 38, 38, 0.15), 0px 1px 2px rgba(0, 0, 0, 0.05)',
+        // Popup/card shadows (light)
+        'attio-popup': '0px 0px 0px 1px #dde1e8, 0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -2px rgba(0, 0, 0, 0.1)',
+        'attio-tooltip': '0px 0px 0px 1px #dde1e8, 0px 1px 3px rgba(0, 0, 0, 0.1)',
         // Inset border effect
-        'attio-inset': 'inset 0px 0px 0px 1px #2F3033',
-        'attio-inset-hover': 'inset 0px 0px 0px 1px #46474A',
-        'attio-inset-focus': 'inset 0px 0px 0px 1px #864AFF',
+        'attio-inset': 'inset 0px 0px 0px 1px #dde1e8',
+        'attio-inset-hover': 'inset 0px 0px 0px 1px #c5cad4',
+        'attio-inset-focus': 'inset 0px 0px 0px 1px #ff6a26',
       },
       borderRadius: {
         'attio-sm': '6px',

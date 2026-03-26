@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { LinkedInMessage, SyncMessagesPayload, ApiResponse } from './types';
-
-declare const chrome: any;
+import { isExtensionContextValid, safeSendMessage } from './utils/chrome';
 
 // --- Message ID Generation (deterministic hash for dedup) ---
 const generateMessageId = (senderName: string, timestamp: string, text: string): string => {
@@ -33,11 +32,11 @@ const parseRelativeTimestamp = (relativeText: string): string => {
     const result = new Date(now);
 
     if (unit.startsWith('s')) result.setSeconds(result.getSeconds() - amount);
+    else if (unit.startsWith('mo') || unit === 'month' || unit === 'months') result.setMonth(result.getMonth() - amount);
     else if (unit === 'm' || unit.startsWith('min')) result.setMinutes(result.getMinutes() - amount);
     else if (unit.startsWith('h')) result.setHours(result.getHours() - amount);
     else if (unit.startsWith('d')) result.setDate(result.getDate() - amount);
     else if (unit.startsWith('w')) result.setDate(result.getDate() - amount * 7);
-    else if (unit.startsWith('mo')) result.setMonth(result.getMonth() - amount);
     else if (unit.startsWith('y')) result.setFullYear(result.getFullYear() - amount);
 
     return result.toISOString();
@@ -53,35 +52,6 @@ const parseRelativeTimestamp = (relativeText: string): string => {
   return now.toISOString();
 };
 
-// --- Extension context check ---
-const isExtensionContextValid = (): boolean => {
-  try {
-    return !!(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
-  } catch {
-    return false;
-  }
-};
-
-// --- Safe message sender ---
-const safeSendMessage = (message: any): Promise<any> => {
-  return new Promise((resolve) => {
-    if (!isExtensionContextValid()) {
-      resolve(null);
-      return;
-    }
-    try {
-      chrome.runtime.sendMessage(message, (response: any) => {
-        if (chrome.runtime.lastError) {
-          resolve(null);
-          return;
-        }
-        resolve(response);
-      });
-    } catch {
-      resolve(null);
-    }
-  });
-};
 
 // --- DOM Scraping ---
 
@@ -862,6 +832,8 @@ const injectUI = () => {
       </React.StrictMode>
     );
 
+    // Reset flag after successful injection
+    isInjecting = false;
     console.log('[Yena Messages] Sync button injected successfully.');
   } catch (error) {
     console.error('[Yena Messages] Injection error:', error);

@@ -1,13 +1,14 @@
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { LinkedInInjector } from './LinkedInInjector';
-import { parseProfileWithRetry, waitForProfileToLoad } from './utils/parser';
+import { parseProfileWithRetry, waitForProfileToLoad } from './utils/parsers';
+import { DOM_IDS } from './constants';
 
 // Handle TRIGGER_SCRAPE from background script (for "Check for Updates" feature)
 // This must be at the top level, NOT inside React, to ensure it's ready immediately
 chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
   if (message.type === 'TRIGGER_SCRAPE') {
-    console.log('[Lumina Content] Received TRIGGER_SCRAPE command');
+    console.log('[Yena Content] Received TRIGGER_SCRAPE command');
 
     // Acknowledge receipt immediately
     sendResponse({ received: true });
@@ -15,13 +16,13 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: a
     // Parse the profile and send it back to background
     waitForProfileToLoad(5000).then(() => {
       parseProfileWithRetry(3, 500).then((data) => {
-        console.log('[Lumina Content] Sending PROFILE_DATA_EXTRACTED:', data.firstName, data.lastName);
+        console.log('[Yena Content] Sending PROFILE_DATA_EXTRACTED:', data.firstName, data.lastName);
         chrome.runtime.sendMessage({
           type: 'PROFILE_DATA_EXTRACTED',
           data: data
         });
       }).catch((err) => {
-        console.error('[Lumina Content] Parse failed:', err);
+        console.error('[Yena Content] Parse failed:', err);
         chrome.runtime.sendMessage({
           type: 'PROFILE_DATA_EXTRACTED',
           data: null,
@@ -39,7 +40,7 @@ let root: Root | null = null;
 let injectionContainer: HTMLElement | null = null;
 let isInjecting: boolean = false; // Guard flag to prevent race conditions
 
-const MOUNT_ID = 'lumina-extension-mount';
+const MOUNT_ID = DOM_IDS.EXTENSION_MOUNT;
 
 const injectUI = () => {
   // 1. Check if we are already injected OR currently injecting (race condition guard)
@@ -81,23 +82,42 @@ const injectUI = () => {
     // 4. Create Shadow DOM
     const shadowRoot = injectionContainer.attachShadow({ mode: 'open' });
 
-    // 5. Inject Styles inside Shadow DOM
-    // We use the main generated CSS file (popup.css) which contains all Tailwind utilities
+    // 5. Inject base styles that normally target html/body (which don't exist in Shadow DOM)
+    const baseStyle = document.createElement('style');
+    baseStyle.textContent = `
+      :host {
+        font-size: 16px !important;
+        line-height: 1.5 !important;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      #yena-root {
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-weight: 500 !important;
+        font-size: 16px !important;
+        line-height: 1.5 !important;
+        letter-spacing: -0.02em !important;
+        color: #181c25 !important;
+      }
+      #yena-root *, #yena-root *::before, #yena-root *::after {
+        box-sizing: border-box !important;
+      }
+    `;
+    shadowRoot.appendChild(baseStyle);
+
+    // 6. Inject Tailwind CSS file
     const styleLink = document.createElement('link');
     styleLink.rel = 'stylesheet';
     styleLink.href = chrome.runtime.getURL('assets/popup.css');
     shadowRoot.appendChild(styleLink);
 
-    // 6. Mount Point inside Shadow DOM
+    // 7. Mount Point inside Shadow DOM
     const mountPoint = document.createElement('div');
-    mountPoint.id = 'lumina-root';
-    // Reset pointer events for the app container
-    // We want the sidebar/buttons to catch clicks
+    mountPoint.id = 'yena-root';
     Object.assign(mountPoint.style, {
-      pointerEvents: 'none', // Allow clicks to pass through the empty parts
+      pointerEvents: 'none',
       height: '100%',
       width: '100%',
-      fontFamily: 'Inter, system-ui, sans-serif' // Enforce font in shadow dom
     });
     shadowRoot.appendChild(mountPoint);
 
@@ -109,9 +129,11 @@ const injectUI = () => {
       </React.StrictMode>
     );
 
-    console.log('[Lumina] UI Injected successfully into Shadow DOM.');
+    // Reset flag after successful injection
+    isInjecting = false;
+    console.log('[Yena] UI Injected successfully into Shadow DOM.');
   } catch (error) {
-    console.error('[Lumina] Error during injection:', error);
+    console.error('[Yena] Error during injection:', error);
     // Reset flag on error to allow retry
     isInjecting = false;
   }

@@ -1,15 +1,77 @@
-export const API_BASE_URL = 'https://lcvfhchrueipjtoudxit.supabase.co/functions/v1';
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjdmZoY2hydWVpcGp0b3VkeGl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxNzkyNDEsImV4cCI6MjA4Mzc1NTI0MX0.p2paiXI8pXH31fkkNK644greiI-TJRSqXNyInSRoJZI';
-export const APP_DOMAIN = 'https://app.yena.ai';
+// Environment configuration
+export interface EnvConfig {
+  id: 'demo' | 'prod';
+  label: string;
+  domain: string;
+  apiBaseUrl: string;
+  supabaseAnonKey: string;
+}
 
-// LinkedIn Selectors (Note: These are heuristic based as LI classes are obfuscated)
-export const SELECTORS = {
-  NAME_HEADING: 'h1.text-heading-xlarge', // Often the name
-  HEADLINE: 'div.text-body-medium.break-words',
-  LOCATION: 'span.text-body-small.inline.t-black--light.break-words',
-  ABOUT_SECTION: '#about',
-  EXPERIENCE_SECTION: '#experience',
-  EDUCATION_SECTION: '#education',
-  // The container where we want to inject our button (The action bar below profile pic)
-  ACTION_BAR: '.ph5 .pv-top-card-v2-ctas',
-};
+export const ENVIRONMENTS: EnvConfig[] = [
+  {
+    id: 'demo',
+    label: 'Demo',
+    domain: import.meta.env.VITE_APP_DOMAIN_DEMO as string,
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL_DEMO as string,
+    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY_DEMO as string,
+  },
+  {
+    id: 'prod',
+    label: 'Prod',
+    domain: import.meta.env.VITE_APP_DOMAIN_PROD as string,
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL_PROD as string,
+    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY_PROD as string,
+  },
+];
+
+/** Find environment config by matching origin against known domains */
+export function getEnvByDomain(origin: string): EnvConfig | undefined {
+  return ENVIRONMENTS.find((env) => env.domain === origin);
+}
+
+/** Get environment config by id */
+export function getEnvById(id: string): EnvConfig | undefined {
+  return ENVIRONMENTS.find((env) => env.id === id);
+}
+
+/** All known app domains (for origin validation) */
+export const ALL_APP_DOMAINS = ENVIRONMENTS.map((env) => env.domain);
+
+// Storage key for active environment
+export const ACTIVE_ENV_KEY = 'yena_active_env';
+
+// Per-environment storage keys
+export const STORAGE_KEYS = {
+  apiKey: (envId: string) => `yena_api_key_${envId}`,
+  userId: (envId: string) => `yena_user_id_${envId}`,
+  cacheJobs: (envId: string) => `yena_cache_jobs_${envId}`,
+  cacheStages: (envId: string) => `yena_cache_stages_${envId}`,
+  cacheLists: (envId: string) => `yena_cache_lists_${envId}`,
+} as const;
+
+// Legacy storage keys for migration
+export const LEGACY_STORAGE_KEYS = {
+  API_KEY: 'lumina_api_key',
+  USER_ID: 'lumina_user_id',
+  CACHE_JOBS: 'lumina_cache_jobs',
+  CACHE_STAGES: 'lumina_cache_stages',
+  CACHE_LISTS: 'lumina_cache_lists',
+} as const;
+
+// Old single-env storage keys (for migration to per-env)
+export const OLD_STORAGE_KEYS = {
+  API_KEY: 'yena_api_key',
+  USER_ID: 'yena_user_id',
+  CACHE_JOBS: 'yena_cache_jobs',
+  CACHE_STAGES: 'yena_cache_stages',
+  CACHE_LISTS: 'yena_cache_lists',
+} as const;
+
+// DOM element IDs
+export const DOM_IDS = {
+  EXTENSION_MOUNT: 'yena-extension-mount',
+  EXTENSION_INSTALLED: 'yena-extension-installed',
+  LEGACY_EXTENSION_INSTALLED: 'lumina-extension-installed',
+  MESSAGES_MOUNT: 'yena-messages-mount',
+  ROOT: 'yena-root',
+} as const;

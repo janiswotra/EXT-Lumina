@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Yena Candidate Clipper",
-  "version": "1.0.36",
+  "version": "1.0.58",
   "description": "One-click add to Yena from LinkedIn and Sales Navigator.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -15,7 +15,8 @@
   "host_permissions": [
     "https://*.linkedin.com/*",
     "https://app.yena.ai/*",
-    "https://*.yena.ai/*"
+    "https://*.yena.ai/*",
+    "https://*.supabase.co/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -54,8 +55,8 @@
       "matches": [
         "https://app.yena.ai/*",
         "https://*.yena.ai/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*"
+        "http://localhost:3000/*",
+        "http://localhost:5173/*"
       ],
       "js": [
         "contentApp.js"
@@ -67,7 +68,6 @@
     {
       "resources": [
         "assets/*",
-        "assets/popup.css",
         "icons/*"
       ],
       "matches": [
@@ -79,8 +79,8 @@
     "matches": [
       "https://app.yena.ai/*",
       "https://*.yena.ai/*",
-      "http://localhost/*",
-      "http://127.0.0.1/*"
+      "http://localhost:3000/*",
+      "http://localhost:5173/*"
     ]
   }
 }
