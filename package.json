@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && vite build -c vite.content.config.ts && vite build -c vite.contentApp.config.ts && vite build -c vite.contentMessages.config.ts",
+    "bump": "node -e \"const m=require('./manifest.json');const v=m.version.split('.');v[2]=+v[2]+1;m.version=v.join('.');require('fs').writeFileSync('./manifest.json',JSON.stringify(m,null,2)+'\\n');console.log('Bumped to',m.version)\"",
+    "build": "npm run bump && tsc && vite build && vite build -c vite.content.config.ts && vite build -c vite.contentApp.config.ts && vite build -c vite.contentMessages.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

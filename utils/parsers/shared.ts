@@ -295,3 +295,102 @@ export const is1stDegreeConnection = (): boolean => {
   const degree = getConnectionDegree();
   return degree === '1st' || degree === '1st+';
 };
+
+/**
+ * Extracts profile picture URL using multiple DOM strategies.
+ * Reusable by both regular DOM parser and AI parser (which can't get images from text).
+ */
+export function extractProfilePictureUrl(firstName?: string, lastName?: string): string {
+  const fullName = [firstName, lastName].filter(Boolean).join(' ');
+
+  // Strategy 1: Open Graph Meta Tag (most stable)
+  const metaImage = document.querySelector('meta[property="og:image"]') ||
+    document.querySelector('meta[name="image"]') ||
+    document.querySelector('meta[property="image"]');
+
+  if (metaImage) {
+    const content = metaImage.getAttribute('content');
+    if (content &&
+      content.startsWith('http') &&
+      !content.includes('ghost') &&
+      !content.includes('li_ghost') &&
+      !content.includes('unavailable')) {
+      return content;
+    }
+  }
+
+  const isValidProfileImg = (src: string): boolean =>
+    !!src &&
+    src.startsWith('http') &&
+    !src.includes('data:image') &&
+    !src.startsWith('blob:') &&
+    !src.includes('ghost') &&
+    !src.includes('li_ghost') &&
+    !src.includes('placeholder') &&
+    !src.includes('static.licdn.com/aero-v1/sc/h/') &&
+    !src.includes('unavailable') &&
+    !src.includes('displaybackground');
+
+  // Strategy 2: DOM Selectors
+  const pictureSelectors = [
+    'img.pv-top-card-profile-picture__image--show',
+    'img.pv-top-card-profile-picture__image',
+    'img.profile-photo-edit__preview',
+    '.pv-top-card-profile-picture img',
+    '.pv-top-card--photo img',
+    'img.presence-entity__image',
+    'img.EntityPhoto-circle-9',
+    'img.EntityPhoto-circle-8',
+    'button.pv-top-card-profile-picture img',
+    '.profile-topcard-person-entity__image img',
+    '.artdeco-entity-lockup__image img',
+    '.pv-top-card img[width="200"]',
+    '.pv-top-card img[width="160"]',
+    '.pv-top-card img[height="200"]',
+    'img[alt*="profile photo" i]',
+    'img[alt*="photo" i][class*="profile"]'
+  ];
+
+  for (const selector of pictureSelectors) {
+    const imgEl = document.querySelector(selector) as HTMLImageElement;
+    if (imgEl?.src && isValidProfileImg(imgEl.src)) {
+      return imgEl.src;
+    }
+  }
+
+  // Strategy 3: Find img with person's name in alt text (2025/2026 layout)
+  if (fullName) {
+    const allImgs = document.querySelectorAll('main img, [class*="top-card"] img, header img');
+    for (const img of allImgs) {
+      const imgEl = img as HTMLImageElement;
+      const alt = imgEl.alt || '';
+      if (alt.includes(fullName) || (firstName && alt.includes(firstName))) {
+        if (imgEl.src && isValidProfileImg(imgEl.src)) {
+          return imgEl.src;
+        }
+      }
+    }
+  }
+
+  // Strategy 4: Large media.licdn.com image in header area
+  const headerImgs = document.querySelectorAll('main img[src*="media.licdn.com"], main img[src*="profile-displayphoto"]');
+  for (const img of headerImgs) {
+    const imgEl = img as HTMLImageElement;
+    if (imgEl.src && isValidProfileImg(imgEl.src) &&
+      (imgEl.width >= 80 || imgEl.height >= 80 || imgEl.getAttribute('width') === '200')) {
+      if (imgEl.width > 0 && imgEl.height > 0 && imgEl.width > imgEl.height * 2) continue;
+      return imgEl.src;
+    }
+  }
+
+  // Strategy 5: Button wrapping profile photo
+  const photoButton = document.querySelector('button.pv-top-card-profile-picture--photo, button[aria-label*="photo" i], button[aria-label*="picture" i]') as HTMLElement;
+  if (photoButton) {
+    const bgImg = photoButton.querySelector('img') as HTMLImageElement;
+    if (bgImg?.src && isValidProfileImg(bgImg.src)) {
+      return bgImg.src;
+    }
+  }
+
+  return '';
+}

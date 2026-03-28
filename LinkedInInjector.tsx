@@ -315,6 +315,7 @@ export const LinkedInInjector: React.FC = () => {
     let isMounted = true;
     let pollTimer: number | null = null;
     let hasInitiallyLoaded = false; // Prevent duplicate initial loads
+    let usedAIParsing = false; // Skip DOM polling when AI parsing succeeded
 
     // Helper to check if profile data meaningfully changed
     const hasDataChanged = (newData: any, prevData: any): boolean => {
@@ -357,13 +358,19 @@ export const LinkedInInjector: React.FC = () => {
           : await parseProfileWithRetry(1, 100, false);
         if (!isMounted || window.location.href !== urlAtStart) return;
 
+        // Track if AI parsing was used — skip DOM polling if so
+        if ((data as any)._parseMethod === 'ai') {
+          usedAIParsing = true;
+        }
+
         const prefetchData = sanitizeProfileTopFields(data);
         // STEP 2: Update UI immediately with parsed data
         setProfileData((prev: any) => ({
           ...mergeProfileReliably(prev, prefetchData, 'prefetch'),
           email: prefetchData.email || (prev.linkedinUrl === window.location.href ? prev.email : '') || '',
           phone: prefetchData.phone || (prev.linkedinUrl === window.location.href ? prev.phone : '') || '',
-          linkedinUrl: window.location.href
+          linkedinUrl: window.location.href,
+          _parseMethod: (data as any)._parseMethod || prev._parseMethod,
         }));
 
         // STEP 3: Check if candidate exists in Yena (BACKGROUND - doesn't block display)
@@ -441,6 +448,7 @@ export const LinkedInInjector: React.FC = () => {
       if (window.location.href !== currentUrlRef.current) {
         currentUrlRef.current = window.location.href;
         hasInitiallyLoaded = false;
+        usedAIParsing = false;
 
         // Reset state for new profile
         resetProfileState();
@@ -451,8 +459,8 @@ export const LinkedInInjector: React.FC = () => {
         return; // Don't do lazy-load polling on URL change
       }
 
-      // Lazy-load content polling ONLY in full mode AND only if data changed
-      if (viewModeRef.current === 'full' && hasInitiallyLoaded) {
+      // Lazy-load content polling ONLY in full mode, only if DOM-parsed (not AI)
+      if (viewModeRef.current === 'full' && hasInitiallyLoaded && !usedAIParsing) {
         try {
           const data = parseProfile();
           setProfileData((prev: any) => {
@@ -487,8 +495,11 @@ export const LinkedInInjector: React.FC = () => {
 
   // Deep hydration after user opens full sidebar:
   // prefer accuracy over speed and update only with reliable values.
+  // Skip if AI parsing already provided complete data.
   useEffect(() => {
     if (viewMode !== 'full') return;
+    // AI parsing already scrolled, expanded, and parsed — no need to re-hydrate
+    if ((profileData as any)._parseMethod === 'ai') return;
     let cancelled = false;
     const urlAtStart = window.location.href;
 

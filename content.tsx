@@ -4,7 +4,7 @@ import { LinkedInInjector } from './LinkedInInjector';
 import { parseProfileWithRetry, waitForProfileToLoad } from './utils/parsers';
 import { DOM_IDS } from './constants';
 
-// Handle TRIGGER_SCRAPE from background script (for "Check for Updates" feature)
+// Handle messages from background script
 // This must be at the top level, NOT inside React, to ensure it's ready immediately
 chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
   if (message.type === 'TRIGGER_SCRAPE') {

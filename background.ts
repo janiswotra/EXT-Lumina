@@ -272,6 +272,36 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    // Handle PARSE_WITH_AI - forward section texts to edge function for Gemini parsing
+    if (message.type === 'PARSE_WITH_AI') {
+      console.log('[Yena Background] Processing PARSE_WITH_AI');
+      (async () => {
+        try {
+          const env = await getActiveEnv();
+          const headers = await getHeaders();
+          const response = await fetch(`${env.apiBaseUrl}/parse-linkedin-text`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(message.payload),
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            console.warn('[Yena Background] AI parse error:', response.status, errText);
+            sendResponse({ success: false, message: `AI parse failed: ${response.status}` });
+            return;
+          }
+
+          const data = await response.json();
+          sendResponse({ success: true, data });
+        } catch (err: any) {
+          console.warn('[Yena Background] AI parse error:', err);
+          sendResponse({ success: false, message: err.message });
+        }
+      })();
+      return true;
+    }
+
     // Handle GET_ACTIVE_ENV request from UI components
     if (message.type === 'GET_ACTIVE_ENV') {
       getActiveEnv().then((env) => {
