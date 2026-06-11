@@ -6,7 +6,7 @@ reference `extentionHTMLImport` + `extentionHTML` split):
 | Part | What it is | Changes often? | Published? |
 |------|-----------|----------------|------------|
 | `static/` (this folder) | Tiny MV3 extension: config popup + content script + injector. Pure JS, **no build**. | Rarely | Yes — load/publish this |
-| the app (repo root) | The React/Vite UI. Built and **hosted on the server**, not packaged. | Often | No — uploaded via `scripts/deploy.mjs` |
+| `app/` | The React/Vite UI. Built and **hosted on the server**, not packaged. | Often | No — uploaded via `app/scripts/deploy.mjs` |
 
 ## Flow
 
@@ -17,7 +17,7 @@ reference `extentionHTMLImport` + `extentionHTML` split):
 3. **Load** — `injector.js` fetches the hosted build and injects it:
    - `GET <domain>/api/v1/extension/main/index.html`
    - `GET <domain>/api/v1/extension/main/<asset>`
-4. **Deploy** — `node scripts/deploy.mjs --domain <domain> --token <DEPLOY_TOKEN> --build`
+4. **Deploy** — from `app/`: `node scripts/deploy.mjs --domain <domain> --token <DEPLOY_TOKEN> --build`
    builds the app and `POST`s every file to `/api/v1/extension/main/<path>`.
 
 The server endpoints live in `yena-ats/server.js` (`POST`/`GET /api/v1/extension/:branch/<path>`).
@@ -30,7 +30,7 @@ The upload token here is the **deploy token** (`EXTENSION_DEPLOY_TOKEN` on the s
 
 ## Channel
 
-The build channel is hardcoded as `main` in `contentScript.js` and `scripts/deploy.mjs`.
+The build channel is hardcoded as `main` in `contentScript.js` and `app/scripts/deploy.mjs`.
 Change it in those two spots if you need a separate channel.
 
 ## ⚠️ LinkedIn CSP / MV3 caveat
