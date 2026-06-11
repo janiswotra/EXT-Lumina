@@ -3,7 +3,8 @@
 // each file to the server, keyed by channel.
 //
 // Usage:
-//   node scripts/deploy.mjs --domain https://app.yena.ai --token <DEPLOY_TOKEN> [--build] [--dist dist] [--channel main]
+//   node scripts/deploy.mjs --domain https://app.yena.ai --token <DEPLOY_TOKEN> [--build] [--dist dist-host] [--channel main]
+//   --build runs `npm run build:host` first (the injectable UI bundle).
 //
 // Env fallbacks: YENA_DOMAIN, EXTENSION_DEPLOY_TOKEN
 //
@@ -25,7 +26,7 @@ const has = (name) => args.includes(`--${name}`);
 const DOMAIN = (flag('domain') || process.env.YENA_DOMAIN || '').replace(/\/+$/, '');
 const TOKEN = flag('token') || process.env.EXTENSION_DEPLOY_TOKEN || '';
 const CHANNEL = flag('channel') || 'main';
-const DIST = flag('dist') || 'dist';
+const DIST = flag('dist') || 'dist-host';
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -82,8 +83,8 @@ async function upload(absPath) {
 
 (async () => {
   if (has('build')) {
-    console.log('Building…');
-    execSync('npm run build', { stdio: 'inherit' });
+    console.log('Building host bundle…');
+    execSync('npm run build:host', { stdio: 'inherit' });
   }
 
   try {
