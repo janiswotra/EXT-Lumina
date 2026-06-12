@@ -1,0 +1,56 @@
+<!-- Sticky icon trigger -->
+@if (viewMode === 'hidden') {
+  <button
+    (click)="toggleView()"
+    title="Add to Yena"
+    class="fixed right-3 top-1/2 -translate-y-1/2 z-[2147483647] w-[38px] h-[38px] rounded-[11px] bg-[#ff6a26] shadow-[0_2px_12px_rgba(255,106,38,0.4)] hover:shadow-[0_4px_20px_rgba(255,106,38,0.5)] hover:scale-105 transition-all flex items-center justify-center cursor-pointer pointer-events-auto border-none p-0 outline-none"
+  >
+    <img [src]="logoUrl" alt="Yena" class="w-[22px] h-[22px] object-contain" />
+  </button>
+}
+
+<!-- Auth screen when not authenticated -->
+@if (viewMode !== 'hidden' && authStatus !== 'AUTHENTICATED') {
+  <app-auth-screen
+    [isChecking]="authStatus === 'CHECKING'"
+    (success)="onAuthSuccess()"
+    (close)="viewMode = 'hidden'"
+  ></app-auth-screen>
+}
+
+<!-- Main content (authenticated) -->
+@if (viewMode !== 'hidden' && authStatus === 'AUTHENTICATED') {
+  @if (viewMode === 'preview') {
+    <app-preview
+      [data]="profileData"
+      [isLoading]="loading"
+      [isExisting]="isExisting"
+      [isFetching]="isFetchingData"
+      (add)="handleAddCandidate()"
+    ></app-preview>
+    <button
+      (click)="viewMode = 'hidden'"
+      class="fixed right-5 top-[350px] text-sm text-[#687182] hover:text-[#181c25] underline z-[2147483647] pointer-events-auto bg-white/80 shadow-sm border border-[#dde1e8] px-2 py-1 rounded"
+    >
+      Close Preview
+    </button>
+  }
+
+  <app-sidebar
+    [isOpen]="viewMode === 'full'"
+    [data]="profileData"
+    [isLoading]="loading"
+    [isExisting]="isExisting"
+    [onUpdate]="setProfileData"
+    [onSave]="handleSave"
+    [onDisconnect]="handleDisconnect"
+    (close)="viewMode = 'hidden'"
+  ></app-sidebar>
+}
+
+<!-- Toast -->
+@if (toast) {
+  <div class="fixed bottom-4 right-4 z-[1000000]">
+    <app-toast [message]="toast.msg" [type]="toast.type" (close)="toast = null"></app-toast>
+  </div>
+}

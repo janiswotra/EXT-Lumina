@@ -46,6 +46,20 @@ export class ChromeService {
     });
   }
 
+  storageRemove(keys: string | string[]): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.available) {
+        resolve();
+        return;
+      }
+      try {
+        chrome.storage.local.remove(keys, () => this.zone.run(() => resolve()));
+      } catch {
+        resolve();
+      }
+    });
+  }
+
   sendMessage<T = unknown>(message: unknown): Promise<T | null> {
     return new Promise((resolve) => {
       if (!this.available) {

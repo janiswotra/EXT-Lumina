@@ -60,7 +60,7 @@ interface HarvestedProfilePreview {
                 @for (profile of profiles; track profile.linkedinUrl) {
                   <div class="flex items-center gap-3 p-2 rounded-lg bg-[#fafbfc] hover:bg-[#f5f7fa] border border-[#e8ebf1] transition-colors">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-br from-[#fde68a] to-[#fed7aa] flex items-center justify-center shrink-0">
-                      <span class="text-sm font-medium text-[#92400e]">{{ profile.firstName?.[0] }}{{ profile.lastName?.[0] }}</span>
+                      <span class="text-sm font-medium text-[#92400e]">{{ profile.firstName[0] }}{{ profile.lastName[0] }}</span>
                     </div>
                     <div class="flex-1 min-w-0">
                       <p class="text-base font-medium text-[#181c25] truncate">{{ profile.firstName }} {{ profile.lastName }}</p>
