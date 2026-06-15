@@ -1,53 +1,44 @@
 # Yena — Static Injector
 
-This is the **static** half of the two-part extension architecture (mirrors the
-reference `extentionHTMLImport` + `extentionHTML` split):
+The **static** half of the two-part extension. Tiny MV3 extension, pure JS, no
+build. Load/publish this folder.
 
-| Part | What it is | Changes often? | Published? |
-|------|-----------|----------------|------------|
-| `static/` (this folder) | Tiny MV3 extension: config popup + content script + injector. Pure JS, **no build**. | Rarely | Yes — load/publish this |
-| `app/` | The React/Vite UI. Built and **hosted on the server**, not packaged. | Often | No — uploaded via `app/scripts/deploy.mjs` |
+| Part | What it is |
+|------|-----------|
+| `static/` (this folder) | The extension: config popup + content script + CSP rules. |
+| `app/` | The UI (plain HTML/JS/CSS), hosted on the Yena server, loaded in an iframe. |
 
-## Flow
+## How it works (iframe — works under LinkedIn CSP)
 
-1. **Configure** — open the extension popup, enter the **domain** (the Yena host)
-   and **token**. Saved to `chrome.storage.local` (`yena_inj_domain`, `yena_inj_token`).
-2. **Inject** — on LinkedIn, `contentScript.js` reads the domain and injects
-   `injector.js` into the page (channel is hardcoded to `main`).
-3. **Load** — `injector.js` fetches the hosted build and injects it:
-   - `GET <domain>/api/v1/extension/main/index.html`
-   - `GET <domain>/api/v1/extension/main/<asset>`
-4. **Deploy** — from `app/`: `node scripts/deploy.mjs --domain <domain> --token <DEPLOY_TOKEN> --build`
-   builds the app and `POST`s every file to `/api/v1/extension/main/<path>`.
+1. **Configure** — open the extension popup, set the **domain** + **token**
+   (saved to `chrome.storage.local`: `yena_inj_domain`, `yena_inj_token`).
+2. **Inject** — on LinkedIn, `contentScript.js` draws the ✦ toggle and creates an
+   `<iframe src="<domain>/api/v1/extension/main/index.html">`.
+3. **Run** — the iframe document is on the **Yena origin**, so its scripts run
+   under Yena's CSP and its API calls are **same-origin** — LinkedIn's CSP/CORS
+   do not block them. This is what makes it work on LinkedIn.
+4. **Bridge** — `contentScript.js` reads the LinkedIn DOM (URL + profile section
+   text) and the token, and posts them into the iframe (`postMessage`). The iframe
+   app (`app/app.js`) calls the Yena API and renders the panel.
 
-The server endpoints live in `yena-ats/server.js` (`POST`/`GET /api/v1/extension/:branch/<path>`).
-The upload token here is the **deploy token** (`EXTENSION_DEPLOY_TOKEN` on the server);
-`GET` is public so the injector needs only the domain.
+## CSP handling (`rules.json`, `declarativeNetRequest`)
+
+- Rule 1 strips LinkedIn's `Content-Security-Policy` (main/sub frame) so the Yena
+  iframe is allowed to load.
+- Rule 2 strips `X-Frame-Options` / `CSP` on `/api/v1/extension/` responses so the
+  Yena page can be framed.
+
+> Trade-off: stripping LinkedIn's CSP relaxes its protections while browsing
+> LinkedIn. It is the simplest reliable way to embed the iframe; a more surgical
+> CSP edit (only `frame-src`) could replace the blanket removal later.
 
 ## Load it
 
-`chrome://extensions` → Developer mode → **Load unpacked** → select this `static/` folder.
+`chrome://extensions` → Developer mode → **Load unpacked** → select this `static/`.
+Then open the popup and set the domain + token.
 
-## Channel
+## Hosting the UI
 
-The build channel is hardcoded as `main` in `contentScript.js` and `app/scripts/deploy.mjs`.
-Change it in those two spots if you need a separate channel.
-
-## ⚠️ LinkedIn CSP / MV3 caveat
-
-`injector.js` fetches and inlines remote scripts/styles into the page. On sites
-with a strict Content-Security-Policy (LinkedIn sets one) the page can block the
-cross-origin `fetch` (`connect-src`) and the injected inline scripts (`script-src`),
-and Chrome Web Store policy forbids remote code in MV3.
-
-This scaffold works as-is on permissive targets and unpacked/internal use. For a
-robust LinkedIn build the recommended path is:
-
-- Render the hosted UI inside an **`<iframe>`** whose `src` points directly at
-  `<domain>/api/v1/extension/main/index.html` (the iframe document uses the Yena
-  domain's own CSP, so its scripts run), and
-- keep a **thin content script** for reading LinkedIn DOM, bridging data to the
-  iframe via `postMessage`.
-
-The token bridge in `contentScript.js` (`postMessage` `GET_TOKEN` → `TOKEN`) is
-already set up for that hand-off.
+Host the `../app/` files at `<domain>/api/v1/extension/main/` (yena-ats `server.js`
+serves `GET /api/v1/extension/:branch/<path>`). The Yena server must allow that
+endpoint to be framed (rules.json strips XFO/CSP on it as a safety net).

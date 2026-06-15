@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Yena Candidate Clipper",
   "version": "1.0.0",
-  "description": "Loads the Yena UI from a configurable domain and injects it into LinkedIn.",
+  "description": "Loads the Yena UI from a configurable domain and injects it into LinkedIn via an iframe.",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -10,7 +10,8 @@
     "128": "icons/icon-128.png"
   },
   "permissions": [
-    "storage"
+    "storage",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "http://*/*",
@@ -37,15 +38,13 @@
       "run_at": "document_idle"
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "injector.js"
-      ],
-      "matches": [
-        "https://*.linkedin.com/*"
-      ],
-      "use_dynamic_url": false
-    }
-  ]
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "csp_relax",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
 }

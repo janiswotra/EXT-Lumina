@@ -1,0 +1,8 @@
+node_modules/
+**/node_modules/
+
+# Chrome-generated artifact when loading the unpacked extension
+static/_metadata/
+
+*.log
+.DS_Store

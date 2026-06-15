@@ -1,38 +1,236 @@
-// Yena injector — content script (runs on LinkedIn, isolated world).
-// Reads the configured domain from storage and injects injector.js into the
-// page, passing the domain + channel. Also bridges the token to the page on
-// request so it never has to sit in the DOM.
+// Yena content script (runs on LinkedIn, isolated world).
+//
+// Injects the Yena UI as an <iframe> served from the configured Yena domain.
+// Because the iframe document is on the Yena origin, its scripts run under
+// Yena's CSP and its API calls are SAME-ORIGIN — LinkedIn's CSP/CORS do not
+// block them. (rules.json strips LinkedIn's CSP so the iframe is allowed, and
+// strips X-Frame-Options on the Yena endpoint so it can be framed.)
+//
+// This script only: draws the ✦ toggle, creates the iframe, and bridges the
+// LinkedIn page data (URL + profile section text) and the token into the iframe.
 
-const CHANNEL = 'main'; // hosted build channel — matches scripts/deploy.mjs
 const KEYS = { domain: 'yena_inj_domain', token: 'yena_inj_token' };
 
+// True only while this content script's extension context is still alive.
+// After the extension is reloaded/updated, an already-injected old script keeps
+// running; guarding on this avoids "Extension context invalidated" errors and
+// the chrome-extension://invalid/ requests that stale getURL calls produce.
+function contextValid() {
+  try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; }
+}
+
 chrome.storage.local.get([KEYS.domain], (res) => {
-  const domain = res[KEYS.domain];
+  const domain = (res[KEYS.domain] || '').replace(/\/+$/, '');
   if (!domain) {
     console.log('[Yena] No domain configured — open the extension popup to set it.');
     return;
   }
-  injectApp(domain);
+  init(domain);
 });
 
-function injectApp(domain) {
-  if (document.getElementById('yena-injector-script')) return;
-  const script = document.createElement('script');
-  script.id = 'yena-injector-script';
-  script.src = chrome.runtime.getURL('injector.js');
-  script.dataset.domain = domain;
-  script.dataset.channel = CHANNEL;
-  script.onload = () => script.remove();
-  (document.head || document.documentElement).appendChild(script);
+function init(domain) {
+  if (document.getElementById('yena-fab')) return;
+
+  const frameSrc = domain + '/api/v1/extension/main/index.html';
+  const frameOrigin = new URL(frameSrc).origin;
+
+  // ✦ toggle button (lives in the LinkedIn page; styled inline).
+  const fab = document.createElement('button');
+  fab.id = 'yena-fab';
+  fab.title = 'Add to Yena';
+  fab.textContent = '✦';
+  fab.style.cssText = [
+    'position:fixed', 'right:14px', 'top:50%', 'transform:translateY(-50%)',
+    'width:40px', 'height:40px', 'border:0', 'border-radius:12px', 'background:#ff6a26',
+    'color:#fff', 'font-size:20px', 'font-weight:700', 'cursor:pointer', 'z-index:2147483647',
+    'box-shadow:0 2px 12px rgba(255,106,38,.4)', 'padding:0',
+  ].join(';');
+  document.body.appendChild(fab);
+
+  // Panel iframe (hidden until toggled).
+  const frame = document.createElement('iframe');
+  frame.id = 'yena-frame';
+  frame.src = frameSrc;
+  frame.style.cssText = [
+    'position:fixed', 'top:0', 'right:0', 'width:min(440px,96vw)', 'height:100%',
+    'border:0', 'z-index:2147483646', 'display:none', 'background:#fff',
+    'box-shadow:-8px 0 30px rgba(0,0,0,.12)', 'color-scheme:normal',
+  ].join(';');
+  document.body.appendChild(frame);
+
+  // Only (re)load data on first open and on profile navigation — toggling the
+  // panel just shows/hides it, so its state and scroll position are preserved.
+  let lastInitUrl = '';
+  fab.addEventListener('click', () => {
+    const show = frame.style.display === 'none';
+    frame.style.display = show ? 'block' : 'none';
+    if (show && location.href !== lastInitUrl) postInit();
+  });
+
+  // Send the LinkedIn page data + token into the iframe.
+  function postInit() {
+    if (!frame.contentWindow || !contextValid()) return;
+    lastInitUrl = location.href;
+    try {
+      chrome.storage.local.get([KEYS.token], (res) => {
+        frame.contentWindow.postMessage({
+          source: 'yena-host',
+          type: 'INIT',
+          token: res[KEYS.token] || null,
+          sourceUrl: location.href,
+          profile: quickProfile(),
+          sections: extractSections(),
+        }, frameOrigin);
+      });
+    } catch (e) {
+      /* extension context gone — ignore */
+    }
+  }
+
+  // Send a token update back to the iframe app.
+  function postTokenSet(token) {
+    if (frame.contentWindow) {
+      frame.contentWindow.postMessage({ source: 'yena-host', type: 'TOKEN_SET', token: token || null }, frameOrigin);
+    }
+  }
+
+  // Messages from the iframe app.
+  window.addEventListener('message', (e) => {
+    if (e.origin !== frameOrigin || e.source !== frame.contentWindow) return;
+    const d = e.data || {};
+    if (d.source !== 'yena-frame' || !contextValid()) return;
+    try {
+      if (d.type === 'READY' || d.type === 'REFRESH') postInit();
+      else if (d.type === 'CLOSE') frame.style.display = 'none';
+      else if (d.type === 'SET_TOKEN') {
+        chrome.storage.local.set({ [KEYS.token]: (d.token || '').trim() }, () => postTokenSet((d.token || '').trim()));
+      } else if (d.type === 'CLEAR_TOKEN') {
+        chrome.storage.local.remove(KEYS.token, () => postTokenSet(null));
+      }
+    } catch (err) {
+      /* extension context gone */
+    }
+  });
+
+  // Re-push data when LinkedIn SPA-navigates while the panel is open.
+  // Also self-cleans if the extension was reloaded (stale context).
+  let lastUrl = location.href;
+  const poll = setInterval(() => {
+    if (!contextValid()) {
+      clearInterval(poll);
+      fab.remove();
+      frame.remove();
+      return;
+    }
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      if (frame.style.display !== 'none') postInit();
+    }
+  }, 1500);
 }
 
-// Token bridge: the injected page app can request the token without it being
-// exposed as a DOM attribute.
-window.addEventListener('message', (event) => {
-  if (event.source !== window) return;
-  const data = event.data;
-  if (!data || data.source !== 'yena-app' || data.type !== 'GET_TOKEN') return;
-  chrome.storage.local.get([KEYS.token], (res) => {
-    window.postMessage({ source: 'yena-ext', type: 'TOKEN', token: res[KEYS.token] || null }, '*');
+// ---- LinkedIn DOM parser (isolated world, full DOM access) — INSTANT -----
+// Reads the loaded profile page directly, so full data shows without waiting
+// for the backend AI parse. AI is only used as a fallback when this is weak.
+function txt(sel) { const el = document.querySelector(sel); return el ? el.innerText.trim() : ''; }
+
+// LinkedIn renders visible text in <span aria-hidden="true">; prefer it to skip
+// the duplicated screen-reader text.
+function vis(el) {
+  if (!el) return '';
+  const s = el.querySelector('span[aria-hidden="true"]');
+  return ((s ? s.textContent : el.textContent) || '').replace(/\s+/g, ' ').trim();
+}
+
+function sectionByAnchor(id) {
+  const a = document.getElementById(id);
+  return a ? a.closest('section') : null;
+}
+function topItems(sec) {
+  if (!sec) return [];
+  const ul = sec.querySelector('ul');
+  return ul ? Array.prototype.filter.call(ul.children, (n) => n.tagName === 'LI') : [];
+}
+function entityLines(li) {
+  return {
+    bold: vis(li.querySelector('.t-bold')),
+    normals: Array.prototype.map.call(li.querySelectorAll('span.t-14.t-normal:not(.t-black--light)'), vis).filter(Boolean),
+    lights: Array.prototype.map.call(li.querySelectorAll('span.t-14.t-normal.t-black--light, .pvs-entity__caption-wrapper'), vis).filter(Boolean),
+  };
+}
+function parseExperiences() {
+  const out = [];
+  topItems(sectionByAnchor('experience')).forEach((li) => {
+    const L = entityLines(li);
+    if (!L.bold) return;
+    const company = (L.normals[0] || '').split(' · ')[0].trim();
+    const dates = (L.lights[0] || '').split(' · ')[0].trim();
+    const m = dates.split(/\s*[-–—]\s*/);
+    out.push({ title: L.bold, company, startDate: (m[0] || '').trim(), endDate: (m[1] || '').trim(), location: L.lights[1] || '', description: '' });
   });
-});
+  return out;
+}
+function parseEducation() {
+  const out = [];
+  topItems(sectionByAnchor('education')).forEach((li) => {
+    const L = entityLines(li);
+    if (!L.bold) return;
+    const deg = L.normals[0] || '';
+    out.push({ school: L.bold, degree: deg, field: '', endDate: '' });
+  });
+  return out;
+}
+function parseSimpleList(id) {
+  const out = [];
+  topItems(sectionByAnchor(id)).forEach((li) => { const b = vis(li.querySelector('.t-bold')); if (b) out.push(b); });
+  return out;
+}
+function parseAbout() {
+  const sec = sectionByAnchor('about');
+  if (!sec) return '';
+  const el = sec.querySelector('.inline-show-more-text span[aria-hidden="true"], .display-flex.full-width span[aria-hidden="true"]');
+  return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+}
+
+function quickProfile() {
+  const full = txt('main h1') || txt('h1');
+  const parts = full.split(/\s+/);
+  const img = document.querySelector('main img.pv-top-card-profile-picture__image, main img.pv-top-card__photo, main button img[width="200"], main img[width="200"]');
+  const loc = txt('main .text-body-small.inline.t-black--light.break-words');
+  const experiences = parseExperiences();
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' '),
+    headline: txt('main .text-body-medium.break-words'),
+    location: loc,
+    connectionDegree: txt('main .dist-value') || txt('main span.dist-value'),
+    currentCompany: experiences[0] ? experiences[0].company : '',
+    about: parseAbout(),
+    profilePictureUrl: img ? img.src : '',
+    experiences,
+    educations: parseEducation(),
+    skills: parseSimpleList('skills'),
+    languages: parseSimpleList('languages'),
+    courses: [],
+    linkedinUrl: window.location.href,
+  };
+}
+
+function sectionByHeading(re) {
+  const secs = document.querySelectorAll('main section');
+  for (let i = 0; i < secs.length; i++) {
+    const h = secs[i].querySelector('h2') ? secs[i].querySelector('h2').innerText : secs[i].innerText.slice(0, 40);
+    if (re.test(h)) return secs[i].innerText.trim();
+  }
+  return '';
+}
+
+function extractSections() {
+  const first = document.querySelector('main section');
+  return {
+    header: ((first && first.innerText) || (document.querySelector('main') || {}).innerText || '').slice(0, 4000),
+    about: sectionByHeading(/about/i).slice(0, 3000),
+    experience: sectionByHeading(/experience/i).slice(0, 5000),
+    education: sectionByHeading(/education/i).slice(0, 2000),
+  };
+}

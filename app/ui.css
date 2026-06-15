@@ -1,0 +1,12 @@
+/* Yena injected UI — minimal base; Tailwind (CDN) does the rest.
+   Runs inside the Yena iframe. */
+
+/* Smaller base font so the panel is compact (not zoomed-in). All Tailwind
+   sizes are rem-based, so they scale down proportionally from here. */
+html { font-size: 13.5px; }
+
+html, body { margin: 0; height: 100%; background: #fff; }
+
+/* Hide scrollbars on the panel scroll area. */
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
