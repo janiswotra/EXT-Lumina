@@ -126,12 +126,12 @@
     var prev = root().querySelector('.scrollbar-none');
     var top = prev ? prev.scrollTop : 0;
 
-    var html =
-      S.view === 'loading' ? '<div class="h-screen flex items-center justify-center text-[#687182]">Loading…</div>'
-      : S.view === 'auth' ? authHtml()
-      : S.view === 'notProfile' ? '<div class="h-screen flex flex-col items-center justify-center text-center px-6 gap-1"><p class="text-base font-medium">Open a candidate profile</p><p class="text-sm text-[#9aa3b2]">linkedin.com/in/…, Sales Navigator or Recruiter</p></div>'
-      : S.view === 'preview' ? previewHtml()
-      : fullHtml() + pickerModalHtml();
+    var html;
+    if (S.view === 'loading') html = '<div class="h-screen flex items-center justify-center text-[#687182]">Loading…</div>';
+    else if (S.view === 'auth') html = authHtml();
+    else if (S.view === 'notProfile') html = shellHtml('<div class="h-full flex flex-col items-center justify-center text-center px-6 gap-1"><p class="text-base font-medium">Open a candidate profile</p><p class="text-sm text-[#9aa3b2]">linkedin.com/in/…, Sales Navigator or Recruiter</p></div>');
+    else if (S.view === 'preview') html = shellHtml(previewBodyHtml());
+    else html = shellHtml(fullBodyHtml(), footerHtml()) + pickerModalHtml();
     root().innerHTML = html;
     wire();
 
@@ -148,8 +148,28 @@
       (S.message ? '<div class="mt-3 text-sm text-[#b91c1c]">' + esc(S.message) + '</div>' : '') + '</div>';
   }
 
-  // ---- Preview (verbatim from preview.html) ----------------------------
-  function previewHtml() {
+  // ---- Persistent shell (header never changes between preview/full) -----
+  function headerHtml() {
+    var ws = me && me.workspaceName ? '<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-[#fef3c7] text-[#92400e] border border-[#fde68a]">' + esc(me.workspaceName) + '</span>' : '';
+    var onProfile = S.view === 'preview' || S.view === 'full';
+    var status = onProfile
+      ? '<div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border ' + (S.exists ? 'bg-[#eff6ff] border-[#bfdbfe]' : 'bg-[#fffbeb] border-[#fde68a]') + '"><div class="w-2 h-2 rounded-full animate-pulse ' + (S.exists ? 'bg-[#2563eb]' : 'bg-[#d97706]') + '"></div><span class="text-sm font-medium ' + (S.exists ? 'text-[#1e40af]' : 'text-[#92400e]') + '">' + (S.exists ? 'In Yena' : 'New Candidate') + '</span></div>'
+      : '';
+    return '<div class="px-6 py-4 border-b border-[#dde1e8] flex items-center justify-between shrink-0">' +
+      '<div class="flex items-center gap-3"><div class="w-9 h-9 rounded-xl bg-[#ff6a26] flex items-center justify-center shadow-sm text-white font-bold">✦</div><span class="font-semibold text-xl text-[#181c25]">Yena</span>' + ws + '</div>' +
+      '<div class="flex items-center gap-2">' + status +
+        '<button data-act="logout" title="Disconnect API Key" class="p-2 rounded-lg hover:bg-[#fef2f2] text-[#687182] hover:text-[#dc2626] transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg></button>' +
+        '<button data-act="close" class="p-2 rounded-lg hover:bg-[#f5f7fa] text-[#687182] hover:text-[#181c25] transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12"/></svg></button>' +
+      '</div></div>';
+  }
+
+  function shellHtml(body, footer) {
+    return '<div class="h-screen flex flex-col bg-white text-[#181c25] font-sans">' + headerHtml() +
+      '<div class="flex-1 overflow-y-auto scrollbar-none">' + body + '</div>' + (footer || '') + '</div>';
+  }
+
+  // ---- Preview body (content only; shell provides the header) -----------
+  function previewBodyHtml() {
     var p = S.profile, sk = S.fetching && !p.firstName;
     var statusBadge = S.exists
       ? '<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium tracking-[-0.02em] bg-[#ecfdf5] border border-[#a7f3d0] text-[#065f46]"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>In Yena</div>'
@@ -174,9 +194,7 @@
       ? '<button data-act="open-full" class="' + ctaBase + ' bg-white text-[#181c25] shadow-[0px_1px_2px_rgba(0,0,0,0.05),inset_0px_0px_0px_1px_#dde1e8] hover:bg-[#f5f7fa]"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>View in Yena</button>'
       : '<button data-act="open-full" class="' + ctaBase + ' bg-[#ff6a26] text-white shadow-[0px_1px_3px_rgba(255,106,38,0.2),0px_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#e85814]"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>Add Person to Yena</button>';
 
-    return '<div class="bg-white overflow-hidden font-sans animate-fade-in-up">' +
-      '<div class="flex items-center justify-between px-4 py-3 border-b border-[#e8ebf1]"><div class="flex items-center gap-2"><div class="w-7 h-7 rounded-lg bg-[#ff6a26] flex items-center justify-center text-white font-bold text-sm">✦</div><span class="text-base font-semibold tracking-[-0.02em] text-[#181c25]">Yena</span></div>' +
-        '<button data-act="close" class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/[0.04] text-[#4a5364]">✕</button></div>' +
+    return '<div class="animate-fade-in-up">' +
       '<div class="flex justify-center py-4">' + statusBadge + '</div>' +
       '<div class="flex justify-center pb-4">' + avatar + '</div>' +
       '<div class="text-center px-4 pb-4"><div class="flex items-center justify-center gap-2"><h2 class="text-xl font-semibold tracking-[-0.02em] text-[#181c25]">' + esc(p.firstName) + ' ' + esc(p.lastName) + '</h2>' + (p.connectionDegree ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-[#eff6ff] border border-[#bfdbfe] text-sm font-medium text-[#1e40af]">' + esc(p.connectionDegree) + '</span>' : '') + '</div></div>' +
@@ -240,25 +258,16 @@
       (open ? '<div class="pb-4">' + inner() + '</div>' : '') + '</div>';
   }
 
-  function fullHtml() {
+  function fullBodyHtml() {
     var p = S.profile;
-    var envBadge = me && me.workspaceName ? '<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-[#fef3c7] text-[#92400e] border border-[#fde68a]">' + esc(me.workspaceName) + '</span>' : '';
     var avatarInner = p.profilePictureUrl ? '<img src="' + esc(p.profilePictureUrl) + '" alt="Profile" class="w-full h-full object-cover" />' : '<span class="text-2xl font-bold text-[#181c25]">' + esc(initials()) + '</span>';
-    var saveCls = 'w-full py-4 text-lg shadow-lg rounded-xl font-semibold text-white flex items-center justify-center gap-2 ' + (S.success ? 'bg-[#059669] hover:bg-[#047857]' : 'bg-[#4e76d9] hover:bg-[#3f63c0]') + (S.saving ? ' opacity-60' : '');
 
     var exp = function () { return '<div class="space-y-3">' + (p.experiences || []).map(function (e) { return '<div class="flex items-start gap-3 py-2 px-3 bg-[#fafbfc] rounded-lg border border-[#e8ebf1]"><div class="w-2 h-2 rounded-full bg-[#2563eb] mt-2 shrink-0"></div><div class="flex-1 min-w-0"><p class="text-base font-medium text-[#181c25]">' + esc(e.title) + '</p><p class="text-sm text-[#687182] mt-0.5">' + esc(e.company) + ' | ' + esc(e.startDate || '') + ' - ' + esc(e.endDate || 'Present') + '</p>' + (e.description ? '<p class="text-sm text-[#7e8799] mt-2 leading-relaxed whitespace-pre-wrap">' + esc(e.description) + '</p>' : '') + '</div></div>'; }).join('') + '</div>'; };
     var edu = function () { return '<div class="space-y-3">' + (p.educations || []).map(function (e) { return '<div class="flex items-start gap-3 py-2 px-3 bg-[#fafbfc] rounded-lg border border-[#e8ebf1]"><div class="w-2 h-2 rounded-full bg-[#2563eb] mt-2 shrink-0"></div><div class="flex-1 min-w-0"><p class="text-base font-medium text-[#181c25]">' + esc(e.school) + '</p><p class="text-sm text-[#687182] mt-0.5">' + esc(e.degree || '') + (e.field ? ' | ' + esc(e.field) : '') + '</p></div></div>'; }).join('') + '</div>'; };
     var chips = function (arr) { return '<div class="flex flex-wrap gap-1.5">' + (arr || []).map(function (s) { return '<span class="text-sm text-[#4a5364] bg-[#fafbfc] px-2 py-1 rounded-md border border-[#e8ebf1]">' + esc(s) + '</span>'; }).join('') + '</div>'; };
     var courses = function () { return '<div class="space-y-2">' + (p.courses || []).map(function (c) { var n = typeof c === 'string' ? c : c.name; var inst = typeof c === 'string' ? '' : c.institution; return '<div class="py-2 px-3 bg-[#fafbfc] rounded-lg border border-[#e8ebf1]"><p class="text-base font-medium text-[#181c25]">' + esc(n) + '</p>' + (inst ? '<p class="text-sm text-[#687182] mt-0.5">' + esc(inst) + '</p>' : '') + '</div>'; }).join('') + '</div>'; };
 
-    return '<div class="h-screen flex flex-col bg-white text-[#181c25] font-sans">' +
-      // header
-      '<div class="px-6 py-4 border-b border-[#dde1e8] flex items-center justify-between shrink-0"><div class="flex items-center gap-2"><button data-act="back" title="Back" class="p-1.5 -ml-1 rounded-lg hover:bg-[#f5f7fa] text-[#687182] hover:text-[#181c25] transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7"/></svg></button><div class="w-9 h-9 rounded-xl bg-[#ff6a26] flex items-center justify-center shadow-sm text-white font-bold">✦</div><span class="font-semibold text-xl text-[#181c25]">Yena</span>' + envBadge + '</div>' +
-        '<div class="flex items-center gap-2"><div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border ' + (S.exists ? 'bg-[#eff6ff] border-[#bfdbfe]' : 'bg-[#fffbeb] border-[#fde68a]') + '"><div class="w-2 h-2 rounded-full animate-pulse ' + (S.exists ? 'bg-[#2563eb]' : 'bg-[#d97706]') + '"></div><span class="text-sm font-medium ' + (S.exists ? 'text-[#1e40af]' : 'text-[#92400e]') + '">' + (S.exists ? 'In Yena' : 'New Candidate') + '</span></div>' +
-          '<button data-act="logout" title="Disconnect API Key" class="p-2 rounded-lg hover:bg-[#fef2f2] text-[#687182] hover:text-[#dc2626] transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg></button>' +
-          '<button data-act="close" class="p-2 rounded-lg hover:bg-[#f5f7fa] text-[#687182] hover:text-[#181c25] transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12"/></svg></button></div></div>' +
-      // scroll body
-      '<div class="flex-1 overflow-y-auto scrollbar-none">' +
+    return '<button data-act="back" title="Back to summary" class="flex items-center gap-1 px-6 pt-3 text-sm text-[#687182] hover:text-[#181c25] transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7"/></svg>Back</button>' +
         // profile header
         '<div class="px-6 py-6 border-b border-[#e8ebf1]"><div class="flex items-start gap-4"><div class="w-16 h-16 rounded-full bg-gradient-to-br from-[#2563eb]/20 to-[#3b82f6]/15 p-0.5 shrink-0"><div class="w-full h-full rounded-full overflow-hidden bg-[#f5f7fa] flex items-center justify-center">' + avatarInner + '</div></div>' +
           '<div class="flex-1 min-w-0"><div class="flex items-center gap-2"><h3 class="text-2xl font-semibold text-[#181c25]">' + esc(p.firstName) + ' ' + esc(p.lastName) + '</h3>' + (p.connectionDegree ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-[#eff6ff] border border-[#bfdbfe] text-sm font-medium text-[#1e40af]">' + esc(p.connectionDegree) + '</span>' : '') + '</div><p class="text-base text-[#4a5364] mt-1 leading-relaxed">' + esc(p.headline) + '</p></div></div></div>' +
@@ -274,11 +283,14 @@
           collapsible('skills', 'Skills', (p.skills || []).length, function () { return chips(p.skills); }) +
           collapsible('langs', 'Languages', (p.languages || []).length, function () { return chips(p.languages); }) +
           collapsible('courses', 'Courses', (p.courses || []).length, courses) +
-        '</div></div>' +
-      // footer
-      '<div class="px-6 py-5 border-t border-[#dde1e8] bg-[#fafbfc] shrink-0"><button data-act="save" ' + (S.saving ? 'disabled' : '') + ' class="' + saveCls + '">' +
-        (S.success ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' + (S.exists ? 'Updated Candidate' : 'Added to Yena') : (S.saving ? 'Saving…' : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' + (S.exists ? 'Update Candidate' : 'Add to Yena'))) + '</button>' +
-        (S.message ? '<div class="mt-2 text-sm text-center text-[#b91c1c]">' + esc(S.message) + '</div>' : '') + '</div></div>';
+        '</div>';
+  }
+
+  function footerHtml() {
+    var saveCls = 'w-full py-4 text-lg shadow-lg rounded-xl font-semibold text-white flex items-center justify-center gap-2 ' + (S.success ? 'bg-[#059669] hover:bg-[#047857]' : 'bg-[#4e76d9] hover:bg-[#3f63c0]') + (S.saving ? ' opacity-60' : '');
+    return '<div class="px-6 py-5 border-t border-[#dde1e8] bg-[#fafbfc] shrink-0"><button data-act="save" ' + (S.saving ? 'disabled' : '') + ' class="' + saveCls + '">' +
+      (S.success ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' + (S.exists ? 'Updated Candidate' : 'Added to Yena') : (S.saving ? 'Saving…' : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' + (S.exists ? 'Update Candidate' : 'Add to Yena'))) + '</button>' +
+      (S.message ? '<div class="mt-2 text-sm text-center text-[#b91c1c]">' + esc(S.message) + '</div>' : '') + '</div>';
   }
 
   // ------------------------------------------------------------------ wire
