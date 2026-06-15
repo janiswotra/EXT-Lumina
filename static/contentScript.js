@@ -19,12 +19,11 @@ function contextValid() {
   try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; }
 }
 
+// The Yena host the UI is loaded from. Baked in (the popup is now info-only);
+// a stored override is still honored if one was set.
+const DEFAULT_DOMAIN = 'https://demo.yena.ai';
 chrome.storage.local.get([KEYS.domain], (res) => {
-  const domain = (res[KEYS.domain] || '').replace(/\/+$/, '');
-  if (!domain) {
-    console.log('[Yena] No domain configured — open the extension popup to set it.');
-    return;
-  }
+  const domain = (res[KEYS.domain] || DEFAULT_DOMAIN).replace(/\/+$/, '');
   init(domain);
 });
 
