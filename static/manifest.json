@@ -46,5 +46,15 @@
         "path": "rules.json"
       }
     ]
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*"
+      ],
+      "matches": [
+        "https://*.linkedin.com/*"
+      ]
+    }
+  ]
 }

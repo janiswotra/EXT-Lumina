@@ -37,12 +37,11 @@ function init(domain) {
   const fab = document.createElement('button');
   fab.id = 'yena-fab';
   fab.title = 'Add to Yena';
-  fab.textContent = '✦';
+  fab.innerHTML = '<img src="' + chrome.runtime.getURL('icons/icon-128.png') + '" alt="Yena" style="width:40px;height:40px;border-radius:12px;display:block;" />';
   fab.style.cssText = [
     'position:fixed', 'right:14px', 'top:50%', 'transform:translateY(-50%)',
-    'width:40px', 'height:40px', 'border:0', 'border-radius:12px', 'background:#ff6a26',
-    'color:#fff', 'font-size:20px', 'font-weight:700', 'cursor:pointer', 'z-index:2147483647',
-    'box-shadow:0 2px 12px rgba(255,106,38,.4)', 'padding:0',
+    'width:40px', 'height:40px', 'border:0', 'border-radius:12px', 'background:transparent',
+    'cursor:pointer', 'z-index:2147483646', 'box-shadow:0 2px 12px rgba(0,0,0,.18)', 'padding:0',
   ].join(';');
   document.body.appendChild(fab);
 
@@ -52,7 +51,7 @@ function init(domain) {
   frame.src = frameSrc;
   frame.style.cssText = [
     'position:fixed', 'top:0', 'right:0', 'width:min(440px,96vw)', 'height:100%',
-    'border:0', 'z-index:2147483646', 'display:none', 'background:#fff',
+    'border:0', 'z-index:2147483647', 'display:none', 'background:#fff',
     'box-shadow:-8px 0 30px rgba(0,0,0,.12)', 'color-scheme:normal',
   ].join(';');
   document.body.appendChild(frame);
@@ -63,15 +62,16 @@ function init(domain) {
   fab.addEventListener('click', () => {
     const show = frame.style.display === 'none';
     frame.style.display = show ? 'block' : 'none';
+    fab.style.display = show ? 'none' : '';
     if (show && location.href !== lastInitUrl) postInit();
   });
 
   // Send the LinkedIn page data + token into the iframe.
-  function postInit() {
+  function sendInit() {
     if (!frame.contentWindow || !contextValid()) return;
-    lastInitUrl = location.href;
     try {
       chrome.storage.local.get([KEYS.token], (res) => {
+        if (!frame.contentWindow) return;
         frame.contentWindow.postMessage({
           source: 'yena-host',
           type: 'INIT',
@@ -84,6 +84,21 @@ function init(domain) {
     } catch (e) {
       /* extension context gone — ignore */
     }
+  }
+
+  // Opening a profile from the feed is an SPA navigation, so the profile DOM can
+  // lag behind the URL change. Wait until the name is parseable before sending,
+  // so the panel never shows empty data. Aborts if the user navigates away.
+  function postInit() {
+    lastInitUrl = location.href;
+    const onProfile = () => /\/in\/|\/sales\/(lead|people)\/|\/talent\/profile\//.test(location.href);
+    let tries = 0;
+    const trySend = () => {
+      if (!contextValid() || location.href !== lastInitUrl) return;
+      if (!onProfile() || quickProfile().firstName || tries++ >= 12) sendInit();
+      else setTimeout(trySend, 400);
+    };
+    trySend();
   }
 
   // Send a token update back to the iframe app.
@@ -100,7 +115,7 @@ function init(domain) {
     if (d.source !== 'yena-frame' || !contextValid()) return;
     try {
       if (d.type === 'READY' || d.type === 'REFRESH') postInit();
-      else if (d.type === 'CLOSE') frame.style.display = 'none';
+      else if (d.type === 'CLOSE') { frame.style.display = 'none'; fab.style.display = ''; }
       else if (d.type === 'SET_TOKEN') {
         chrome.storage.local.set({ [KEYS.token]: (d.token || '').trim() }, () => postTokenSet((d.token || '').trim()));
       } else if (d.type === 'CLEAR_TOKEN') {

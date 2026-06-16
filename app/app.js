@@ -187,7 +187,6 @@
     if (p.location) rows += row('Location', '<span class="text-base font-medium tracking-[-0.02em] text-[#181c25] block break-words leading-relaxed">' + esc(p.location) + '</span>');
     if (p.currentCompany) rows += row('Company', '<div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#eff6ff] border border-[#bfdbfe]"><span class="text-base font-medium tracking-[-0.02em] text-[#1e40af]">' + esc(p.currentCompany) + '</span></div>');
     if (p.experiences && p.experiences[0] && p.experiences[0].title) rows += row('Job title', '<span class="text-base font-medium tracking-[-0.02em] text-[#181c25] block break-words leading-relaxed">' + esc(p.experiences[0].title) + '</span>');
-    rows += row('LinkedIn', '<a href="' + esc(p.linkedinUrl) + '" target="_blank" rel="noopener noreferrer" class="text-base font-medium tracking-[-0.02em] text-[#181c25] hover:text-[#2563eb] hover:underline underline-offset-2 block break-words">View Profile</a>');
 
     var ctaBase = 'w-full h-[40px] rounded-lg text-base font-semibold tracking-[-0.02em] transition-all duration-200 flex items-center justify-center gap-2 active:scale-[0.98]';
     var cta = S.exists
