@@ -19,19 +19,35 @@ function contextValid() {
   try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; }
 }
 
-// The Yena host the UI is loaded from. Baked in (the popup is now info-only);
-// a stored override is still honored if one was set.
+// The Yena host the UI is loaded from. The API token embeds the backend it
+// belongs to (yena_sk_<random>_<domain>), so the domain is derived straight from
+// the stored token. Until a token exists we bootstrap on the default host; a
+// legacy stored override is honored only when there is no token.
 const DEFAULT_DOMAIN = 'https://demo.yena.ai';
-chrome.storage.local.get([KEYS.domain], (res) => {
-  const domain = (res[KEYS.domain] || DEFAULT_DOMAIN).replace(/\/+$/, '');
-  init(domain);
+
+// Pull the domain suffix out of a token: yena_sk_<random>_<domain>.
+function domainFromToken(token) {
+  const seg = (token || '').trim().split('_').pop();
+  return seg && seg.indexOf('.') > 0 ? seg : '';
+}
+
+function resolveDomain(token, override) {
+  const td = domainFromToken(token);
+  if (td) return 'https://' + td;                 // token is the source of truth
+  if (override) return override.replace(/\/+$/, '');
+  return DEFAULT_DOMAIN;
+}
+
+chrome.storage.local.get([KEYS.domain, KEYS.token], (res) => {
+  init(resolveDomain(res[KEYS.token], res[KEYS.domain]));
 });
 
 function init(domain) {
   if (document.getElementById('yena-fab')) return;
 
-  const frameSrc = domain + '/api/v1/extension/main/index.html';
-  const frameOrigin = new URL(frameSrc).origin;
+  const FRAME_PATH = '/api/v1/extension/main/index.html';
+  let currentDomain = domain.replace(/\/+$/, '');
+  let frameOrigin = new URL(currentDomain).origin;
 
   // ✦ toggle button (lives in the LinkedIn page; styled inline).
   const fab = document.createElement('button');
@@ -48,13 +64,27 @@ function init(domain) {
   // Panel iframe (hidden until toggled).
   const frame = document.createElement('iframe');
   frame.id = 'yena-frame';
-  frame.src = frameSrc;
+  frame.src = currentDomain + FRAME_PATH;
   frame.style.cssText = [
     'position:fixed', 'top:0', 'right:0', 'width:min(440px,96vw)', 'height:100%',
     'border:0', 'z-index:2147483647', 'display:none', 'background:#fff',
     'box-shadow:-8px 0 30px rgba(0,0,0,.12)', 'color-scheme:normal',
   ].join(';');
   document.body.appendChild(frame);
+
+  // Point the iframe at a different Yena backend — used when a freshly entered
+  // token's embedded domain differs from the one we bootstrapped on. Reloading
+  // the frame re-runs its handshake, so the token + page data are re-sent there
+  // same-origin. Returns true if a switch actually happened.
+  function setDomain(newDomain) {
+    newDomain = (newDomain || '').replace(/\/+$/, '');
+    if (!newDomain || newDomain === currentDomain) return false;
+    currentDomain = newDomain;
+    frameOrigin = new URL(newDomain).origin;
+    lastInitUrl = '';
+    frame.src = currentDomain + FRAME_PATH;
+    return true;
+  }
 
   // Only (re)load data on first open and on profile navigation — toggling the
   // panel just shows/hides it, so its state and scroll position are preserved.
@@ -117,7 +147,13 @@ function init(domain) {
       if (d.type === 'READY' || d.type === 'REFRESH') postInit();
       else if (d.type === 'CLOSE') { frame.style.display = 'none'; fab.style.display = ''; }
       else if (d.type === 'SET_TOKEN') {
-        chrome.storage.local.set({ [KEYS.token]: (d.token || '').trim() }, () => postTokenSet((d.token || '').trim()));
+        const token = (d.token || '').trim();
+        chrome.storage.local.set({ [KEYS.token]: token }, () => {
+          const td = domainFromToken(token);
+          // If the token points at a different backend, reload the frame there
+          // (its API calls must be same-origin); otherwise just hand it the token.
+          if (!(td && setDomain('https://' + td))) postTokenSet(token);
+        });
       } else if (d.type === 'CLEAR_TOKEN') {
         chrome.storage.local.remove(KEYS.token, () => postTokenSet(null));
       }
