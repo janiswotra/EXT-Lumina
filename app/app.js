@@ -237,10 +237,10 @@
 
   // ---- Full sidebar (verbatim from sidebar.html) ----------------------
   function selectorBtn(kind, label, sel, primary) {
-    var cls = 'w-full flex items-center justify-between px-4 py-4 rounded-xl border transition-all hover:bg-[#f5f7fa] active:scale-[0.99] ' + (primary ? 'bg-[#eff6ff] border-[#bfdbfe] hover:border-[#93c5fd]' : 'bg-[#fafbfc] border-[#dde1e8] hover:border-[#c5cad4]');
+    var cls = 'w-full flex items-center justify-between px-4 py-4 rounded-xl border transition-all hover:bg-[#f5f7fa] active:scale-[0.99] ' + (primary ? 'bg-[#fff7ed] border-[#fed7aa] hover:border-[#fdba74]' : 'bg-[#fafbfc] border-[#dde1e8] hover:border-[#c5cad4]');
     var val = sel ? (sel.title || sel.name) : null;
     var placeholder = kind === 'job' ? 'Select a job' : kind === 'stage' ? 'Select stage' : 'Select a list (optional)';
-    return '<button data-picker="' + kind + '" class="' + cls + '"><div class="flex items-center gap-3"><div class="w-3 h-3 rounded-full ' + (primary ? 'bg-[#2563eb]' : 'bg-[#687182]') + '"></div>' +
+    return '<button data-picker="' + kind + '" class="' + cls + '"><div class="flex items-center gap-3"><div class="w-3 h-3 rounded-full ' + (primary ? 'bg-[#ff6a26]' : 'bg-[#687182]') + '"></div>' +
       '<div class="text-left"><p class="text-sm text-[#687182] uppercase tracking-wider mb-1">' + label + '</p><p class="text-base font-medium ' + (val ? 'text-[#181c25]' : 'text-[#7e8799]') + '">' + esc(val || placeholder) + '</p></div></div>' +
       '<svg class="w-4 h-4 text-[#687182]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></button>';
   }
