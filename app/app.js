@@ -287,7 +287,7 @@
   }
 
   function footerHtml() {
-    var saveCls = 'w-full py-4 text-lg shadow-lg rounded-xl font-semibold text-white flex items-center justify-center gap-2 ' + (S.success ? 'bg-[#059669] hover:bg-[#047857]' : 'bg-[#4e76d9] hover:bg-[#3f63c0]') + (S.saving ? ' opacity-60' : '');
+    var saveCls = 'w-full py-4 text-lg shadow-lg rounded-xl font-semibold text-white flex items-center justify-center gap-2 ' + (S.success ? 'bg-[#059669] hover:bg-[#047857]' : 'bg-[#ff6a26] hover:bg-[#e85814]') + (S.saving ? ' opacity-60' : '');
     return '<div class="px-6 py-5 border-t border-[#dde1e8] bg-[#fafbfc] shrink-0"><button data-act="save" ' + (S.saving ? 'disabled' : '') + ' class="' + saveCls + '">' +
       (S.success ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' + (S.exists ? 'Updated Candidate' : 'Added to Yena') : (S.saving ? 'Saving…' : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' + (S.exists ? 'Update Candidate' : 'Add to Yena'))) + '</button>' +
       (S.message ? '<div class="mt-2 text-sm text-center text-[#b91c1c]">' + esc(S.message) + '</div>' : '') + '</div>';
