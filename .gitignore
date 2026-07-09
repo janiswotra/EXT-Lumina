@@ -1,8 +1,22 @@
+# Dependencies
 node_modules/
 **/node_modules/
 
-# Chrome-generated artifact when loading the unpacked extension
-static/_metadata/
+# Secrets — never commit real values, use .env.example as the template
+.env
+.env.*
+!.env.example
 
+# Build output (npm run build: src/ -> dist/)
+dist/
+
+# Chrome-generated artifact when loading the unpacked extension
+src/_metadata/
+dist/_metadata/
+
+# Packaged extension zips (produced by `npm run zip`)
+*.zip
+
+# Misc
 *.log
 .DS_Store

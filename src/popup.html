@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Yena</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      width: 268px;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #181c25;
+    }
+    .wrap { display: flex; align-items: center; gap: 12px; padding: 16px 18px 12px; }
+    .wrap img { width: 36px; height: 36px; border-radius: 9px; }
+    .name { font-size: 16px; font-weight: 700; line-height: 1.2; }
+    .ver { font-size: 12px; color: #687182; margin-top: 3px; }
+    .dev { padding: 12px 18px 16px; border-top: 1px solid #eef1f5; }
+    .dev label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #687182; display: block; margin-bottom: 6px; }
+    .dev input { width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid #dde1e8; border-radius: 8px; outline: none; }
+    .dev input:focus { border-color: #4e76d9; }
+    .dev .hint { font-size: 11px; color: #9aa3b2; margin: 6px 0 0; line-height: 1.4; }
+    .dev .saved { color: #059669; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <img src="icons/icon-128.png" alt="Yena" />
+    <div>
+      <div class="name">Yena</div>
+      <div class="ver" id="ver"></div>
+    </div>
+  </div>
+  <div class="dev">
+    <label for="domain">Backend override (dev)</label>
+    <input id="domain" type="text" placeholder="e.g. http://localhost:3000" spellcheck="false" />
+    <p class="hint" id="hint">Set <b>http://localhost:3000</b> to test a local backend. Leave blank to use the token's domain.</p>
+  </div>
+  <script src="popup.js"></script>
+</body>
+
+</html>
