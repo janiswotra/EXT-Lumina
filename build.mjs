@@ -38,9 +38,15 @@ for (const e of entries) {
   await cp(join(SRC, e.name), join(OUT, e.name), { recursive: true });
 }
 
-// 3. Stamp the version from package.json into the built manifest.
+// 3. Stamp the version from package.json into the built manifest. package.json is
+//    the single source of truth — editing src/manifest.json's version does nothing,
+//    so warn loudly rather than silently overwriting a hand-edit.
 const manifestPath = join(OUT, 'manifest.json');
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+if (manifest.version !== version) {
+  console.warn(`! src/manifest.json says ${manifest.version}, package.json says ${version}.`);
+  console.warn(`  Using ${version} — bump the version in package.json, not the manifest.`);
+}
 manifest.version = version;
 await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 

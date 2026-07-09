@@ -181,9 +181,17 @@
     if (!token) { S.view = 'auth'; render(); return; }
     S.view = 'loading'; S.loadingMsg = 'Connecting…'; S.message = ''; S.kind = ''; render();
 
-    me = (await api('/extension/me')).data;
+    var meRes = await api('/extension/me');
+    me = meRes.data;
     if (location.href !== loadedUrl) return;
-    if (!me) { S.view = 'auth'; S.message = 'Invalid or expired token.'; S.kind = 'error'; render(); return; }
+    if (!me) {
+      S.view = 'auth';
+      // Distinguish "backend outside host_permissions" from a genuinely bad token.
+      S.message = meRes.blockedHost
+        ? 'This token points at ' + meRes.blockedHost + ', which the extension is not permitted to reach.'
+        : 'Invalid or expired token.';
+      S.kind = 'error'; render(); return;
+    }
     if (!isProfileUrl(sourceUrl)) { S.view = 'notProfile'; render(); return; }
 
     S.loadingMsg = 'Reading the profile…'; render();

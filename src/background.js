@@ -3,8 +3,29 @@
 // page's CORS policy, but a service-worker fetch to a host in host_permissions is
 // not. So the panel (content script) forwards every request here.
 
+// Must mirror manifest.json host_permissions. Host permissions are deliberately
+// narrow (*.yena.ai + localhost) to avoid Chrome Web Store's broad-permission
+// review; a token pointing anywhere else can't be fetched, so say so plainly
+// instead of failing with an opaque network error.
+function allowedHost(url) {
+  try {
+    var u = new URL(url);
+    if (u.protocol === 'https:' && /(^|\.)yena\.ai$/i.test(u.hostname)) return true;
+    if (u.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/i.test(u.hostname)) return true;
+    return false;
+  } catch (e) { return false; }
+}
+
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (!msg || !msg.__yenaApi) return;
+
+  if (!allowedHost(msg.url)) {
+    var host = '';
+    try { host = new URL(msg.url).host; } catch (e) { host = msg.url; }
+    sendResponse({ ok: false, status: 0, data: null, error: 'Backend not allowed: ' + host, blockedHost: host });
+    return; // responded synchronously
+  }
+
   fetch(msg.url, {
     method: msg.method || 'GET',
     headers: { 'Content-Type': 'application/json', 'x-api-key': msg.token || '' },
