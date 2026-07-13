@@ -1,11 +1,12 @@
 {
   "name": "yena-candidate-clipper",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Chrome MV3 extension that clips LinkedIn profiles into Yena — reads the page text and lets Yena's AI structure it. No iframe, no hosting.",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
+    "build:dev": "node build.mjs --dev",
     "start": "echo 'Edit ./src, then: npm run build -> load ./dist in Chrome (chrome://extensions -> Load unpacked). Zip lands in the repo root.'"
   },
   "engines": {

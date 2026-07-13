@@ -19,10 +19,22 @@ import { fileURLToPath } from 'node:url';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SRC = join(ROOT, 'src');
 const OUT = join(ROOT, 'dist');
-const ZIP = join(ROOT, 'yena-clipper.zip');
 
 // Files in src/ that should never ship in the packaged extension.
 const SKIP = new Set(['README.md', '_metadata']);
+
+// Host permissions that exist only so a developer can point the extension at a local
+// backend. They MUST NOT ship to the Chrome Web Store: users approved a permission set
+// that never included localhost, so shipping it counts as a permission increase and
+// Chrome disables the extension for every existing user until they re-approve it.
+// Default build = store build (stripped). `npm run build:dev` keeps them.
+const DEV_HOSTS = ['http://localhost/*', 'http://127.0.0.1/*'];
+const dev = process.argv.includes('--dev');
+
+// The store-ready artifact can only ever come from the default build: a dev build
+// (localhost permissions kept) writes to a clearly-marked separate zip, so the file
+// named yena-clipper.zip is always safe to upload.
+const ZIP = join(ROOT, dev ? 'yena-clipper-dev.zip' : 'yena-clipper.zip');
 
 const pkg = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'));
 const version = pkg.version;
@@ -48,12 +60,18 @@ if (manifest.version !== version) {
   console.warn(`  Using ${version} — bump the version in package.json, not the manifest.`);
 }
 manifest.version = version;
+
+// 3b. Strip the dev-only host permissions unless this is an explicit dev build.
+if (!dev) {
+  manifest.host_permissions = (manifest.host_permissions || []).filter((h) => !DEV_HOSTS.includes(h));
+}
 await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 
 // 4. Package dist/ into a zip for the Chrome Web Store.
 await rm(ZIP, { force: true });
 execFileSync('zip', ['-r', '-q', '-FS', ZIP, '.'], { cwd: OUT });
 
-console.log(`Built dist/ from src/  (version ${version})`);
-console.log(`Packaged  yena-clipper.zip`);
+console.log(`Built dist/ from src/  (version ${version}, ${dev ? 'DEV build — localhost allowed' : 'store build — dev hosts stripped'})`);
+console.log(`Host permissions: ${manifest.host_permissions.join(', ')}`);
+console.log(`Packaged  ${dev ? 'yena-clipper-dev.zip (DO NOT upload to the store)' : 'yena-clipper.zip'}`);
 console.log('Load unpacked: chrome://extensions -> Developer mode -> Load unpacked -> ./dist');

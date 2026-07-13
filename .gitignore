@@ -14,8 +14,9 @@ dist/
 src/_metadata/
 dist/_metadata/
 
-# Packaged extension zips (produced by `npm run zip`)
-*.zip
+# The store-ready zip (npm run build) is tracked on purpose; only the dev variant
+# (npm run build:dev, carries localhost host permissions) must never reach the repo.
+yena-clipper-dev.zip
 
 # Misc
 *.log
